@@ -1,0 +1,18 @@
+package com.ekusys.exam.paper.dto;
+
+import lombok.Builder;
+import lombok.Data;
+
+@Data
+@Builder
+public class PaperQuestionView {
+
+    private Long questionId;
+    private String type;
+    private String difficulty;
+    private String content;
+    private String optionsJson;
+    private String answer;
+    private Integer score;
+    private Integer sortOrder;
+}

@@ -1,0 +1,61 @@
+spring:
+  application:
+    name: exam
+  profiles:
+    active: dev
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/exam_mvp?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: root
+    password: "962464"
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+      data-locations: classpath:data.sql
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+      timeout: 3s
+  jackson:
+    default-property-inclusion: non_null
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  global-config:
+    db-config:
+      id-type: assign_id
+  configuration:
+    map-underscore-to-camel-case: true
+
+server:
+  port: 8080
+
+jwt:
+  issuer: exam-system
+  secret: "change-this-secret-to-a-long-random-string-in-production"
+  access-token-expire-minutes: 120
+  refresh-token-expire-days: 7
+
+app:
+  cors:
+    allowed-origins:
+      - "http://localhost:5173"
+      - "http://127.0.0.1:5173"
+  snapshot:
+    flush-interval-ms: 30000
+  security:
+    default-password: "123456"
+
+logging:
+  level:
+    root: info
+    com.ekusys.exam: debug
