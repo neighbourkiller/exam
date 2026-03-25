@@ -25,6 +25,7 @@ spring:
       port: 6379
       database: 0
       timeout: 3s
+      password: 962464
   jackson:
     default-property-inclusion: non_null
 
@@ -54,6 +55,13 @@ app:
     flush-interval-ms: 30000
   security:
     default-password: "123456"
+  minio:
+    endpoint: "http://127.0.0.1:9000"
+    public-endpoint: "http://127.0.0.1:9000"
+    access-key: "admin"
+    secret-key: "password123"
+    bucket: "question-images"
+    public-read: true
 
 logging:
   level:

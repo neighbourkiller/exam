@@ -21,7 +21,7 @@ public class MybatisMetaHandler implements MetaObjectHandler {
     @Override
     public void updateFill(MetaObject metaObject) {
         Long userId = SecurityUtils.getCurrentUserId();
-        this.strictUpdateFill(metaObject, "updateTime", LocalDateTime.class, LocalDateTime.now());
-        this.strictUpdateFill(metaObject, "updateBy", Long.class, userId == null ? 0L : userId);
+        this.setFieldValByName("updateTime", LocalDateTime.now(), metaObject);
+        this.setFieldValByName("updateBy", userId == null ? 0L : userId, metaObject);
     }
 }

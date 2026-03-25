@@ -4,8 +4,12 @@ export const loginApi = (data) => http.post('/auth/login', data)
 export const meApi = () => http.get('/auth/me')
 
 export const queryQuestionsApi = (data) => http.post('/questions/query', data)
+export const listQuestionSubjectsApi = () => http.get('/questions/subjects')
 export const createQuestionApi = (data) => http.post('/questions', data)
-export const updateQuestionApi = (id, data) => http.put(`/questions/${id}`, data)
+export const uploadQuestionImageApi = (formData) => http.post('/questions/images/upload', formData, {
+  headers: { 'Content-Type': 'multipart/form-data' }
+})
+export const updateQuestionApi = (id, data = {}) => http.put(`/questions/${id}`, data)
 export const deleteQuestionApi = (id) => http.delete(`/questions/${id}`)
 
 export const createManualPaperApi = (data) => http.post('/papers/manual', data)
@@ -36,3 +40,7 @@ export const resetPasswordApi = (id, data) => http.post(`/admin/users/${id}/rese
 export const assignRolesApi = (id, data) => http.put(`/admin/users/${id}/roles`, data)
 export const rolesApi = () => http.get('/admin/roles')
 export const createRoleApi = (data) => http.post('/admin/roles', data)
+
+export const listCoursesApi = () => http.get('/admin/courses')
+export const createCourseApi = (data) => http.post('/admin/courses', data)
+export const updateCourseApi = (id, data) => http.put(`/admin/courses/${id}`, data)

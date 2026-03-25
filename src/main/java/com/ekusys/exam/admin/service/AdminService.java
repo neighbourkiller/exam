@@ -3,6 +3,9 @@ package com.ekusys.exam.admin.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.ekusys.exam.admin.dto.CourseCreateRequest;
+import com.ekusys.exam.admin.dto.CourseUpdateRequest;
+import com.ekusys.exam.admin.dto.CourseView;
 import com.ekusys.exam.admin.dto.RoleCreateRequest;
 import com.ekusys.exam.admin.dto.RoleView;
 import com.ekusys.exam.admin.dto.UserCreateRequest;
@@ -13,10 +16,12 @@ import com.ekusys.exam.common.api.PageResponse;
 import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.repository.entity.ClassStudent;
 import com.ekusys.exam.repository.entity.Role;
+import com.ekusys.exam.repository.entity.Subject;
 import com.ekusys.exam.repository.entity.User;
 import com.ekusys.exam.repository.entity.UserRole;
 import com.ekusys.exam.repository.mapper.ClassStudentMapper;
 import com.ekusys.exam.repository.mapper.RoleMapper;
+import com.ekusys.exam.repository.mapper.SubjectMapper;
 import com.ekusys.exam.repository.mapper.UserMapper;
 import com.ekusys.exam.repository.mapper.UserRoleMapper;
 import java.util.List;
@@ -34,6 +39,7 @@ public class AdminService {
     private final RoleMapper roleMapper;
     private final UserRoleMapper userRoleMapper;
     private final ClassStudentMapper classStudentMapper;
+    private final SubjectMapper subjectMapper;
     private final PasswordEncoder passwordEncoder;
 
     @Value("${app.security.default-password:123456}")
@@ -43,11 +49,13 @@ public class AdminService {
                         RoleMapper roleMapper,
                         UserRoleMapper userRoleMapper,
                         ClassStudentMapper classStudentMapper,
+                        SubjectMapper subjectMapper,
                         PasswordEncoder passwordEncoder) {
         this.userMapper = userMapper;
         this.roleMapper = roleMapper;
         this.userRoleMapper = userRoleMapper;
         this.classStudentMapper = classStudentMapper;
+        this.subjectMapper = subjectMapper;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -166,6 +174,62 @@ public class AdminService {
         role.setName(request.getName());
         roleMapper.insert(role);
         return role.getId();
+    }
+
+    public List<CourseView> listCourses() {
+        return subjectMapper.selectList(new LambdaQueryWrapper<Subject>().orderByDesc(Subject::getCreateTime)).stream()
+            .map(subject -> CourseView.builder()
+                .id(subject.getId())
+                .name(subject.getName())
+                .description(subject.getDescription())
+                .build())
+            .toList();
+    }
+
+    @Transactional
+    public Long createCourse(CourseCreateRequest request) {
+        String courseName = request.getName() == null ? "" : request.getName().trim();
+        Subject existingByName = subjectMapper.selectOne(new LambdaQueryWrapper<Subject>()
+            .eq(Subject::getName, courseName)
+            .last("limit 1"));
+        if (existingByName != null) {
+            throw new BusinessException("课程已存在");
+        }
+
+        if (request.getId() != null) {
+            Subject existingById = subjectMapper.selectById(request.getId());
+            if (existingById != null) {
+                throw new BusinessException("课程ID已存在");
+            }
+        }
+
+        Subject subject = new Subject();
+        subject.setId(request.getId());
+        subject.setName(courseName);
+        subject.setDescription(request.getDescription());
+        subjectMapper.insert(subject);
+        return subject.getId();
+    }
+
+    @Transactional
+    public void updateCourse(Long courseId, CourseUpdateRequest request) {
+        Subject subject = subjectMapper.selectById(courseId);
+        if (subject == null) {
+            throw new BusinessException("课程不存在");
+        }
+
+        String courseName = request.getName() == null ? "" : request.getName().trim();
+        Subject existingByName = subjectMapper.selectOne(new LambdaQueryWrapper<Subject>()
+            .eq(Subject::getName, courseName)
+            .ne(Subject::getId, courseId)
+            .last("limit 1"));
+        if (existingByName != null) {
+            throw new BusinessException("课程名称已存在");
+        }
+
+        subject.setName(courseName);
+        subject.setDescription(request.getDescription());
+        subjectMapper.updateById(subject);
     }
 
     private void updateStudentClass(Long userId, Long classId) {

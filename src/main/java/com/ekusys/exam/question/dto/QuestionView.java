@@ -9,6 +9,7 @@ public class QuestionView {
 
     private Long id;
     private Long subjectId;
+    private String subjectName;
     private String type;
     private String difficulty;
     private String content;

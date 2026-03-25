@@ -65,7 +65,14 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { createRoleApi, createUserApi, deleteUserApi, queryUsersApi, resetPasswordApi, rolesApi } from '../../api'
+import {
+  createRoleApi,
+  createUserApi,
+  deleteUserApi,
+  queryUsersApi,
+  resetPasswordApi,
+  rolesApi
+} from '../../api'
 
 const query = reactive({ pageNum: 1, pageSize: 20, keyword: '' })
 const users = ref([])

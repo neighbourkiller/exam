@@ -5,6 +5,27 @@
     </template>
 
     <el-form :inline="true" :model="query" class="mb-12">
+      <el-form-item label="课程">
+        <el-select
+          v-model="query.subjectId"
+          clearable
+          filterable
+          placeholder="请选择课程"
+          style="width: 260px"
+        >
+          <el-option
+            v-for="course in subjectOptions"
+            :key="course.id"
+            :label="courseLabel(course)"
+            :value="course.id"
+          >
+            <div class="course-option-row">
+              <span class="course-option-id">{{ course.id }}</span>
+              <span>{{ course.name }}</span>
+            </div>
+          </el-option>
+        </el-select>
+      </el-form-item>
       <el-form-item label="关键字">
         <el-input v-model="query.keyword" placeholder="题干关键字" clearable />
       </el-form-item>
@@ -19,82 +40,397 @@
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="loadQuestions">查询</el-button>
+        <el-button class="ml-8" type="success" @click="openCreateDialog">新增题目</el-button>
       </el-form-item>
     </el-form>
 
     <el-table :data="tableData" border>
-      <el-table-column prop="id" label="ID" width="120" />
+      <el-table-column prop="subjectName" label="课程名" width="180" />
       <el-table-column prop="type" label="题型" width="90" />
       <el-table-column prop="difficulty" label="难度" width="90" />
       <el-table-column prop="content" label="题目" />
       <el-table-column prop="defaultScore" label="默认分值" width="100" />
-      <el-table-column label="操作" width="120">
+      <el-table-column label="操作" width="180">
         <template #default="scope">
+          <el-button type="primary" size="small" @click="edit(scope.row.id)">修改</el-button>
           <el-button type="danger" size="small" @click="del(scope.row.id)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
 
-    <div class="section-title">新增题目</div>
-    <el-form :model="form" label-width="90px">
-      <el-row :gutter="10">
-        <el-col :span="6"><el-form-item label="科目ID"><el-input v-model.number="form.subjectId" /></el-form-item></el-col>
-        <el-col :span="6"><el-form-item label="题型"><el-select v-model="form.type"><el-option label="单选" value="SINGLE" /><el-option label="多选" value="MULTI" /><el-option label="判断" value="JUDGE" /><el-option label="填空" value="BLANK" /><el-option label="简答" value="SHORT" /></el-select></el-form-item></el-col>
-        <el-col :span="6"><el-form-item label="难度"><el-select v-model="form.difficulty"><el-option label="简单" value="EASY" /><el-option label="中等" value="MEDIUM" /><el-option label="困难" value="HARD" /></el-select></el-form-item></el-col>
-        <el-col :span="6"><el-form-item label="分值"><el-input v-model.number="form.defaultScore" /></el-form-item></el-col>
-      </el-row>
-      <el-form-item label="题目"><el-input v-model="form.content" type="textarea" :rows="2" /></el-form-item>
-      <el-form-item label="选项JSON"><el-input v-model="form.optionsJson" placeholder='[{"label":"A","value":"..."}]' /></el-form-item>
-      <el-form-item label="答案"><el-input v-model="form.answer" /></el-form-item>
-      <el-form-item label="解析"><el-input v-model="form.analysis" type="textarea" :rows="2" /></el-form-item>
-      <el-button type="success" @click="create">新增题目</el-button>
-    </el-form>
+    <el-dialog
+      v-model="createDialogVisible"
+      title="新增题目"
+      width="900px"
+      destroy-on-close
+    >
+      <el-form :model="form" label-width="90px">
+        <el-row :gutter="10">
+          <el-col :span="10">
+            <el-form-item label="课程">
+              <el-select
+                v-model="form.subjectId"
+                clearable
+                filterable
+                placeholder="请选择课程"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="course in subjectOptions"
+                  :key="course.id"
+                  :label="courseLabel(course)"
+                  :value="course.id"
+                >
+                  <div class="course-option-row">
+                    <span class="course-option-id">{{ course.id }}</span>
+                    <span>{{ course.name }}</span>
+                  </div>
+                </el-option>
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="5">
+            <el-form-item label="题型">
+              <el-select v-model="form.type">
+                <el-option label="单选" value="SINGLE" />
+                <el-option label="多选" value="MULTI" />
+                <el-option label="判断" value="JUDGE" />
+                <el-option label="填空" value="BLANK" />
+                <el-option label="简答" value="SHORT" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="5">
+            <el-form-item label="难度">
+              <el-select v-model="form.difficulty">
+                <el-option label="简单" value="EASY" />
+                <el-option label="中等" value="MEDIUM" />
+                <el-option label="困难" value="HARD" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="4">
+            <el-form-item label="分值">
+              <el-input v-model.number="form.defaultScore" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-form-item label="题目">
+          <el-input v-model="form.content" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item label="插图">
+          <el-upload
+            :show-file-list="false"
+            :http-request="uploadImage"
+            accept="image/*"
+          >
+            <el-button type="primary" plain>上传插图</el-button>
+          </el-upload>
+          <span class="upload-tip">支持 jpg/png/webp，上传后将在下方预览</span>
+        </el-form-item>
+        <el-form-item v-if="uploadedAssets.length" label="插图预览">
+          <div class="asset-preview-list">
+            <el-image
+              v-for="asset in uploadedAssets"
+              :key="asset.assetId"
+              :src="asset.url"
+              :preview-src-list="uploadedAssets.map(item => item.url)"
+              fit="cover"
+              class="asset-thumb"
+            />
+          </div>
+        </el-form-item>
+        <el-form-item v-if="showOptionEditor" label="选项">
+          <div class="option-editor">
+            <div
+              v-for="(item, index) in optionItems"
+              :key="item.label"
+              class="option-row"
+            >
+              <span class="option-tag">{{ item.label }}:</span>
+              <el-input
+                v-model="item.value"
+                :disabled="isJudgeType"
+                placeholder="请输入选项内容"
+              />
+              <el-button
+                v-if="isChoiceType"
+                type="danger"
+                plain
+                @click="removeOption(index)"
+              >
+                -
+              </el-button>
+            </div>
+            <el-button v-if="isChoiceType" type="primary" plain @click="addOption">+</el-button>
+          </div>
+        </el-form-item>
+        <el-form-item label="答案">
+          <el-select
+            v-if="isSingleAnswerType"
+            v-model="singleAnswerValue"
+            clearable
+            placeholder="请选择答案选项"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in answerOptionCandidates"
+              :key="item.label"
+              :label="`${item.label}: ${item.value}`"
+              :value="item.label"
+            />
+          </el-select>
+          <el-select
+            v-else-if="isMultiAnswerType"
+            v-model="multiAnswerValues"
+            multiple
+            clearable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="请选择多个答案选项"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in answerOptionCandidates"
+              :key="item.label"
+              :label="`${item.label}: ${item.value}`"
+              :value="item.label"
+            />
+          </el-select>
+          <el-input v-else v-model="form.answer" />
+        </el-form-item>
+        <el-form-item label="解析">
+          <el-input v-model="form.analysis" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createDialogVisible = false">取消</el-button>
+        <el-button type="success" @click="create">新增题目</el-button>
+      </template>
+    </el-dialog>
   </el-card>
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { createQuestionApi, deleteQuestionApi, queryQuestionsApi } from '../../api'
+import {
+  createQuestionApi,
+  deleteQuestionApi,
+  listQuestionSubjectsApi,
+  queryQuestionsApi,
+  updateQuestionApi,
+  uploadQuestionImageApi
+} from '../../api'
 
 const tableData = ref([])
+const subjectOptions = ref([])
+const uploadedAssets = ref([])
+const createDialogVisible = ref(false)
 
 const query = reactive({
   pageNum: 1,
   pageSize: 20,
-  subjectId: 5001,
+  subjectId: null,
   keyword: '',
-  type: '',
-  difficulty: ''
+  type: null,
+  difficulty: null
 })
 
-const form = reactive({
-  subjectId: 5001,
+const createFormDefaults = () => ({
+  subjectId: null,
   type: 'SINGLE',
   difficulty: 'EASY',
   content: '',
-  optionsJson: '',
   answer: '',
-  analysis: '',
+  analysis: '略',
   defaultScore: 5
 })
+const form = reactive(createFormDefaults())
+const optionItems = ref([])
+const singleAnswerValue = ref('')
+const multiAnswerValues = ref([])
+
+const courseLabel = (course) => `${course.id} - ${course.name}`
+
+const loadSubjectOptions = async () => {
+  subjectOptions.value = await listQuestionSubjectsApi()
+}
 
 const loadQuestions = async () => {
   const payload = {
     ...query,
-    subjectId: query.subjectId || 5001
+    subjectId: query.subjectId || null,
+    keyword: (query.keyword || '').trim() || null,
+    type: query.type || null,
+    difficulty: query.difficulty || null
   }
   const data = await queryQuestionsApi(payload)
   tableData.value = data.records || []
 }
 
+const optionLabel = (index) => String.fromCharCode(65 + index)
+
+const relabelOptions = () => {
+  optionItems.value = optionItems.value.map((item, index) => ({
+    ...item,
+    label: optionLabel(index)
+  }))
+}
+
+const resetChoiceOptions = () => {
+  optionItems.value = [
+    { label: 'A', value: '' },
+    { label: 'B', value: '' }
+  ]
+}
+
+const resetJudgeOptions = () => {
+  optionItems.value = [
+    { label: 'A', value: 'true' },
+    { label: 'B', value: 'false' }
+  ]
+}
+
+const isChoiceType = computed(() => form.type === 'SINGLE' || form.type === 'MULTI')
+const isJudgeType = computed(() => form.type === 'JUDGE')
+const showOptionEditor = computed(() => isChoiceType.value || isJudgeType.value)
+const isSingleAnswerType = computed(() => form.type === 'SINGLE' || form.type === 'JUDGE')
+const isMultiAnswerType = computed(() => form.type === 'MULTI')
+const answerOptionCandidates = computed(() =>
+  optionItems.value.filter(item => (item.value || '').trim())
+)
+
+const resetCreateForm = () => {
+  Object.assign(form, createFormDefaults())
+  uploadedAssets.value = []
+  singleAnswerValue.value = ''
+  multiAnswerValues.value = []
+  resetChoiceOptions()
+}
+
+const openCreateDialog = () => {
+  resetCreateForm()
+  createDialogVisible.value = true
+}
+
+watch(
+  () => form.type,
+  (newType) => {
+    singleAnswerValue.value = ''
+    multiAnswerValues.value = []
+    form.answer = ''
+    if (newType === 'JUDGE') {
+      resetJudgeOptions()
+      return
+    }
+    if (newType === 'SINGLE' || newType === 'MULTI') {
+      resetChoiceOptions()
+      return
+    }
+    optionItems.value = []
+  },
+  { immediate: true }
+)
+
+watch(
+  optionItems,
+  () => {
+    const labels = new Set(optionItems.value.map(item => item.label))
+    if (singleAnswerValue.value && !labels.has(singleAnswerValue.value)) {
+      singleAnswerValue.value = ''
+    }
+    if (multiAnswerValues.value.length) {
+      multiAnswerValues.value = multiAnswerValues.value.filter(label => labels.has(label))
+    }
+  },
+  { deep: true }
+)
+
+const addOption = () => {
+  if (!isChoiceType.value) {
+    return
+  }
+  if (optionItems.value.length >= 26) {
+    ElMessage.warning('选项最多支持26个')
+    return
+  }
+  optionItems.value = [...optionItems.value, { label: '', value: '' }]
+  relabelOptions()
+}
+
+const removeOption = (index) => {
+  if (!isChoiceType.value) {
+    return
+  }
+  if (optionItems.value.length <= 2) {
+    ElMessage.warning('单选/多选至少保留2个选项')
+    return
+  }
+  optionItems.value.splice(index, 1)
+  relabelOptions()
+}
+
+const buildOptionsJson = () => {
+  if (!showOptionEditor.value) {
+    return null
+  }
+  if (isChoiceType.value) {
+    const hasEmpty = optionItems.value.some(item => !(item.value || '').trim())
+    if (hasEmpty) {
+      throw new Error('请完整填写所有选项内容')
+    }
+  }
+  return JSON.stringify(
+    optionItems.value.map(item => ({
+      label: item.label,
+      value: item.value
+    }))
+  )
+}
+
+const buildAnswerValue = () => {
+  if (isSingleAnswerType.value) {
+    if (!singleAnswerValue.value) {
+      throw new Error('请选择答案选项')
+    }
+    return singleAnswerValue.value
+  }
+  if (isMultiAnswerType.value) {
+    if (!multiAnswerValues.value.length) {
+      throw new Error('请至少选择一个答案选项')
+    }
+    return [...multiAnswerValues.value].sort().join(',')
+  }
+  return (form.answer || '').trim()
+}
+
 const create = async () => {
-  await createQuestionApi(form)
+  let optionsJson = null
+  let answer = ''
+  if (!form.subjectId) {
+    ElMessage.warning('请选择课程')
+    return
+  }
+  try {
+    optionsJson = buildOptionsJson()
+    answer = buildAnswerValue()
+  } catch (error) {
+    ElMessage.warning(error.message)
+    return
+  }
+
+  const payload = {
+    ...form,
+    answer,
+    optionsJson,
+    assetIds: uploadedAssets.value.map(asset => asset.assetId)
+  }
+  await createQuestionApi(payload)
   ElMessage.success('新增成功')
-  form.content = ''
-  form.optionsJson = ''
-  form.answer = ''
-  form.analysis = ''
+  createDialogVisible.value = false
+  resetCreateForm()
   await loadQuestions()
 }
 
@@ -105,7 +441,32 @@ const del = async (id) => {
   await loadQuestions()
 }
 
-onMounted(loadQuestions)
+const edit = async (id) => {
+  await updateQuestionApi(id)
+  ElMessage.success('修改接口占位调用成功（暂未实现具体修改逻辑）')
+}
+
+const uploadImage = async (uploadOption) => {
+  const formData = new FormData()
+  formData.append('file', uploadOption.file)
+  try {
+    const result = await uploadQuestionImageApi(formData)
+    uploadedAssets.value = [...uploadedAssets.value, result]
+    ElMessage.success('插图上传成功')
+    if (uploadOption.onSuccess) {
+      uploadOption.onSuccess(result)
+    }
+  } catch (error) {
+    if (uploadOption.onError) {
+      uploadOption.onError(error)
+    }
+  }
+}
+
+onMounted(async () => {
+  await loadSubjectOptions()
+  await loadQuestions()
+})
 </script>
 
 <style scoped>
@@ -118,9 +479,57 @@ onMounted(loadQuestions)
   margin-bottom: 12px;
 }
 
-.section-title {
-  font-size: 16px;
+.ml-8 {
+  margin-left: 8px;
+}
+
+.course-option-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.course-option-id {
+  color: #606266;
+  margin-right: 12px;
+  font-family: monospace;
+}
+
+.upload-tip {
+  margin-left: 12px;
+  color: #909399;
+  font-size: 12px;
+}
+
+.asset-preview-list {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.asset-thumb {
+  width: 96px;
+  height: 96px;
+  border-radius: 4px;
+  border: 1px solid #dcdfe6;
+}
+
+.option-editor {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.option-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.option-tag {
+  width: 26px;
+  color: #606266;
   font-weight: 600;
-  margin: 16px 0 8px;
 }
 </style>

@@ -1,6 +1,9 @@
 package com.ekusys.exam.admin.controller;
 
 import com.ekusys.exam.admin.dto.AssignRolesRequest;
+import com.ekusys.exam.admin.dto.CourseCreateRequest;
+import com.ekusys.exam.admin.dto.CourseUpdateRequest;
+import com.ekusys.exam.admin.dto.CourseView;
 import com.ekusys.exam.admin.dto.ResetPasswordRequest;
 import com.ekusys.exam.admin.dto.RoleCreateRequest;
 import com.ekusys.exam.admin.dto.RoleView;
@@ -76,5 +79,21 @@ public class AdminController {
     @PostMapping("/roles")
     public ApiResponse<Long> createRole(@Valid @RequestBody RoleCreateRequest request) {
         return ApiResponse.ok("创建成功", adminService.createRole(request));
+    }
+
+    @GetMapping("/courses")
+    public ApiResponse<List<CourseView>> listCourses() {
+        return ApiResponse.ok(adminService.listCourses());
+    }
+
+    @PostMapping("/courses")
+    public ApiResponse<Long> createCourse(@Valid @RequestBody CourseCreateRequest request) {
+        return ApiResponse.ok("创建成功", adminService.createCourse(request));
+    }
+
+    @PutMapping("/courses/{courseId}")
+    public ApiResponse<Void> updateCourse(@PathVariable Long courseId, @Valid @RequestBody CourseUpdateRequest request) {
+        adminService.updateCourse(courseId, request);
+        return ApiResponse.ok("更新成功", null);
     }
 }

@@ -31,3 +31,13 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Frontend (Vite/Vue)
+src/main/resources/frontend/node_modules/
+src/main/resources/frontend/dist/
+src/main/resources/frontend/.vite/
+src/main/resources/frontend/*.log
+
+# Local AI/tooling cache
+.codex/
+

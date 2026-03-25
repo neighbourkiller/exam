@@ -12,6 +12,7 @@ const StudentExamList = () => import('../views/student/ExamList.vue')
 const StudentExamDoing = () => import('../views/student/ExamDoing.vue')
 const StudentResult = () => import('../views/student/ResultView.vue')
 const AdminUser = () => import('../views/admin/UserManage.vue')
+const AdminCourse = () => import('../views/admin/CourseManage.vue')
 
 const routes = [
   { path: '/login', component: LoginView },
@@ -28,7 +29,8 @@ const routes = [
       { path: 'student/exams', component: StudentExamList, meta: { roles: ['STUDENT'] } },
       { path: 'student/exam/:id', component: StudentExamDoing, meta: { roles: ['STUDENT'] } },
       { path: 'student/result', component: StudentResult, meta: { roles: ['STUDENT'] } },
-      { path: 'admin/users', component: AdminUser, meta: { roles: ['ADMIN'] } }
+      { path: 'admin/users', component: AdminUser, meta: { roles: ['ADMIN'] } },
+      { path: 'admin/courses', component: AdminCourse, meta: { roles: ['ADMIN'] } }
     ]
   }
 ]
@@ -43,9 +45,11 @@ router.beforeEach((to) => {
   if (to.path === '/login') {
     return true
   }
-  if (!auth.isLogin) {
+
+  if (!auth.ensureSession()) {
     return '/login'
   }
+
   const allowRoles = to.meta?.roles || []
   if (!allowRoles.length) {
     return true

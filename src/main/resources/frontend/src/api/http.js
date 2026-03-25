@@ -24,6 +24,19 @@ http.interceptors.response.use(
     return Promise.reject(new Error(resp?.message || '请求失败'))
   },
   (error) => {
+    const status = error?.response?.status
+    if (status === 401 || status === 403) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('refreshToken')
+      localStorage.removeItem('roles')
+      localStorage.removeItem('username')
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
+      ElMessage.error('登录已失效，请重新登录')
+      return Promise.reject(error)
+    }
+
     ElMessage.error(error?.response?.data?.message || error.message || '网络异常')
     return Promise.reject(error)
   }

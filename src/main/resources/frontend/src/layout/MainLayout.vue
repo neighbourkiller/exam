@@ -18,6 +18,7 @@
         <el-sub-menu v-if="isAdmin" index="admin">
           <template #title>管理端</template>
           <el-menu-item index="/admin/users">用户管理</el-menu-item>
+          <el-menu-item index="/admin/courses">课程管理</el-menu-item>
         </el-sub-menu>
       </el-menu>
       <div class="bottom">

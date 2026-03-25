@@ -79,6 +79,24 @@ CREATE TABLE IF NOT EXISTS question (
     update_by BIGINT
 );
 
+CREATE TABLE IF NOT EXISTS question_asset (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    question_id BIGINT,
+    uploader_id BIGINT NOT NULL,
+    file_type VARCHAR(16) NOT NULL,
+    url VARCHAR(512) NOT NULL,
+    object_key VARCHAR(255) NOT NULL,
+    original_name VARCHAR(255),
+    content_type VARCHAR(128),
+    size BIGINT,
+    create_time DATETIME,
+    update_time DATETIME,
+    create_by BIGINT,
+    update_by BIGINT,
+    KEY idx_question_asset_question (question_id),
+    KEY idx_question_asset_uploader (uploader_id)
+);
+
 CREATE TABLE IF NOT EXISTS paper (
     id BIGINT PRIMARY KEY,
     name VARCHAR(128) NOT NULL,
