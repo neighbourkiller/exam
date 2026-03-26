@@ -16,7 +16,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   sql:
     init:
-      mode: always
+      mode: never
       schema-locations: classpath:schema.sql
       data-locations: classpath:data.sql
   data:
@@ -62,6 +62,12 @@ app:
     secret-key: "password123"
     bucket: "question-images"
     public-read: true
+  asset-cleanup:
+    enabled: true
+    startup-run: true
+    interval-ms: 600000
+    orphan-grace-minutes: 30
+    minio-prefix: "question/"
 
 logging:
   level:
