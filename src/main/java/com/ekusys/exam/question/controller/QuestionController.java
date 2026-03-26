@@ -6,6 +6,7 @@ import com.ekusys.exam.question.dto.QuestionCreateRequest;
 import com.ekusys.exam.question.dto.QuestionImageUploadView;
 import com.ekusys.exam.question.dto.QuestionQueryRequest;
 import com.ekusys.exam.question.dto.QuestionSubjectOptionView;
+import com.ekusys.exam.question.dto.QuestionUpdateRequest;
 import com.ekusys.exam.question.dto.QuestionView;
 import com.ekusys.exam.question.service.QuestionImageService;
 import com.ekusys.exam.question.service.QuestionService;
@@ -69,8 +70,8 @@ public class QuestionController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
-    public ApiResponse<Void> update(@PathVariable Long id) {
-        questionService.update(id);
+    public ApiResponse<Void> update(@PathVariable Long id, @Valid @RequestBody QuestionUpdateRequest request) {
+        questionService.update(id, request);
         return ApiResponse.ok("更新成功", null);
     }
 

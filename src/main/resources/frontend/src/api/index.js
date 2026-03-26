@@ -5,6 +5,7 @@ export const meApi = () => http.get('/auth/me')
 
 export const queryQuestionsApi = (data) => http.post('/questions/query', data)
 export const listQuestionSubjectsApi = () => http.get('/questions/subjects')
+export const getQuestionDetailApi = (id) => http.get(`/questions/${id}`)
 export const createQuestionApi = (data) => http.post('/questions', data)
 export const uploadQuestionImageApi = (formData) => http.post('/questions/images/upload', formData, {
   headers: { 'Content-Type': 'multipart/form-data' }

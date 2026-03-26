@@ -4,6 +4,7 @@ import com.ekusys.exam.common.enums.Difficulty;
 import com.ekusys.exam.common.enums.QuestionType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import java.util.List;
 import lombok.Data;
 
 @Data
@@ -30,4 +31,6 @@ public class QuestionUpdateRequest {
 
     @NotNull
     private Integer defaultScore;
+
+    private List<Long> assetIds;
 }

@@ -50,17 +50,31 @@
       <el-table-column prop="difficulty" label="难度" width="90" />
       <el-table-column prop="content" label="题目" />
       <el-table-column prop="defaultScore" label="默认分值" width="100" />
-      <el-table-column label="操作" width="180">
+      <el-table-column label="操作" width="220">
         <template #default="scope">
-          <el-button type="primary" size="small" @click="edit(scope.row.id)">修改</el-button>
-          <el-button type="danger" size="small" @click="del(scope.row.id)">删除</el-button>
+          <el-button
+            type="primary"
+            size="small"
+            :disabled="scope.row.canManage === false"
+            @click="openEditDialog(scope.row)"
+          >
+            修改
+          </el-button>
+          <el-button
+            type="danger"
+            size="small"
+            :disabled="scope.row.canManage === false"
+            @click="del(scope.row)"
+          >
+            删除
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
 
     <el-dialog
       v-model="createDialogVisible"
-      title="新增题目"
+      :title="dialogTitle"
       width="900px"
       destroy-on-close
     >
@@ -131,14 +145,19 @@
         </el-form-item>
         <el-form-item v-if="uploadedAssets.length" label="插图预览">
           <div class="asset-preview-list">
-            <el-image
+            <div
               v-for="asset in uploadedAssets"
               :key="asset.assetId"
-              :src="asset.url"
-              :preview-src-list="uploadedAssets.map(item => item.url)"
-              fit="cover"
-              class="asset-thumb"
-            />
+              class="asset-preview-item"
+            >
+              <el-image
+                :src="asset.url"
+                :preview-src-list="uploadedAssets.map(item => item.url)"
+                fit="cover"
+                class="asset-thumb"
+              />
+              <el-button type="danger" text size="small" @click="removeAsset(asset.assetId)">移除</el-button>
+            </div>
           </div>
         </el-form-item>
         <el-form-item v-if="showOptionEditor" label="选项">
@@ -206,7 +225,7 @@
       </el-form>
       <template #footer>
         <el-button @click="createDialogVisible = false">取消</el-button>
-        <el-button type="success" @click="create">新增题目</el-button>
+        <el-button type="success" @click="submitQuestion">{{ dialogSubmitText }}</el-button>
       </template>
     </el-dialog>
   </el-card>
@@ -217,6 +236,7 @@ import { computed, reactive, ref, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createQuestionApi,
+  getQuestionDetailApi,
   deleteQuestionApi,
   listQuestionSubjectsApi,
   queryQuestionsApi,
@@ -228,6 +248,9 @@ const tableData = ref([])
 const subjectOptions = ref([])
 const uploadedAssets = ref([])
 const createDialogVisible = ref(false)
+const dialogMode = ref('create')
+const editingQuestionId = ref(null)
+const formHydrating = ref(false)
 
 const query = reactive({
   pageNum: 1,
@@ -298,11 +321,15 @@ const isJudgeType = computed(() => form.type === 'JUDGE')
 const showOptionEditor = computed(() => isChoiceType.value || isJudgeType.value)
 const isSingleAnswerType = computed(() => form.type === 'SINGLE' || form.type === 'JUDGE')
 const isMultiAnswerType = computed(() => form.type === 'MULTI')
+const dialogTitle = computed(() => (dialogMode.value === 'edit' ? '修改题目' : '新增题目'))
+const dialogSubmitText = computed(() => (dialogMode.value === 'edit' ? '保存修改' : '新增题目'))
 const answerOptionCandidates = computed(() =>
   optionItems.value.filter(item => (item.value || '').trim())
 )
 
 const resetCreateForm = () => {
+  dialogMode.value = 'create'
+  editingQuestionId.value = null
   Object.assign(form, createFormDefaults())
   uploadedAssets.value = []
   singleAnswerValue.value = ''
@@ -315,9 +342,116 @@ const openCreateDialog = () => {
   createDialogVisible.value = true
 }
 
+const normalizeUploadedAssets = (assets) => {
+  if (!Array.isArray(assets)) {
+    return []
+  }
+  return assets
+    .filter(asset => asset && asset.assetId)
+    .map(asset => ({
+      assetId: asset.assetId,
+      url: asset.url,
+      objectKey: asset.objectKey,
+      originalName: asset.originalName,
+      size: asset.size,
+      fileType: asset.fileType
+    }))
+}
+
+const parseOptionsFromJson = (optionsJson) => {
+  if (!optionsJson) {
+    return []
+  }
+  try {
+    const parsed = JSON.parse(optionsJson)
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+    return parsed
+      .filter(item => item && item.value !== undefined && item.value !== null)
+      .map((item, index) => ({
+        label: optionLabel(index),
+        value: String(item.value)
+      }))
+  } catch {
+    return []
+  }
+}
+
+const syncAnswerControlsFromRaw = () => {
+  singleAnswerValue.value = ''
+  multiAnswerValues.value = []
+  const raw = (form.answer || '').trim()
+  if (!raw) {
+    return
+  }
+  if (isSingleAnswerType.value) {
+    singleAnswerValue.value = raw.split(',')[0].trim()
+    return
+  }
+  if (isMultiAnswerType.value) {
+    multiAnswerValues.value = raw
+      .split(',')
+      .map(item => item.trim())
+      .filter(item => item)
+  }
+}
+
+const openEditDialog = async (row) => {
+  if (!row || !row.id) {
+    ElMessage.warning('题目ID无效，无法修改')
+    return
+  }
+  if (row.canManage === false) {
+    ElMessage.warning('无权限修改该题目')
+    return
+  }
+
+  formHydrating.value = true
+  try {
+    const detail = await getQuestionDetailApi(row.id)
+    dialogMode.value = 'edit'
+    editingQuestionId.value = row.id
+
+    Object.assign(form, {
+      subjectId: detail.subjectId ?? null,
+      type: detail.type || 'SINGLE',
+      difficulty: detail.difficulty || 'EASY',
+      content: detail.content || '',
+      answer: detail.answer || '',
+      analysis: detail.analysis || '略',
+      defaultScore: detail.defaultScore ?? 5
+    })
+
+    const parsedOptions = parseOptionsFromJson(detail.optionsJson)
+    if (form.type === 'JUDGE') {
+      optionItems.value = parsedOptions.length ? parsedOptions : [
+        { label: 'A', value: 'true' },
+        { label: 'B', value: 'false' }
+      ]
+    } else if (form.type === 'SINGLE' || form.type === 'MULTI') {
+      optionItems.value = parsedOptions.length >= 2 ? parsedOptions : [
+        { label: 'A', value: '' },
+        { label: 'B', value: '' }
+      ]
+    } else {
+      optionItems.value = []
+    }
+
+    uploadedAssets.value = normalizeUploadedAssets(detail.assets)
+    syncAnswerControlsFromRaw()
+    createDialogVisible.value = true
+  } finally {
+    formHydrating.value = false
+  }
+}
+
 watch(
   () => form.type,
   (newType) => {
+    if (formHydrating.value) {
+      return
+    }
     singleAnswerValue.value = ''
     multiAnswerValues.value = []
     form.answer = ''
@@ -406,44 +540,65 @@ const buildAnswerValue = () => {
   return (form.answer || '').trim()
 }
 
-const create = async () => {
+const buildPayload = () => {
   let optionsJson = null
   let answer = ''
   if (!form.subjectId) {
     ElMessage.warning('请选择课程')
-    return
+    return null
   }
   try {
     optionsJson = buildOptionsJson()
     answer = buildAnswerValue()
   } catch (error) {
     ElMessage.warning(error.message)
-    return
+    return null
   }
 
-  const payload = {
+  return {
     ...form,
     answer,
     optionsJson,
     assetIds: uploadedAssets.value.map(asset => asset.assetId)
   }
-  await createQuestionApi(payload)
-  ElMessage.success('新增成功')
+}
+
+const submitQuestion = async () => {
+  const payload = buildPayload()
+  if (!payload) {
+    return
+  }
+
+  if (dialogMode.value === 'edit') {
+    if (!editingQuestionId.value) {
+      ElMessage.warning('缺少题目ID，无法保存修改')
+      return
+    }
+    await updateQuestionApi(editingQuestionId.value, payload)
+    ElMessage.success('修改成功')
+  } else {
+    await createQuestionApi(payload)
+    ElMessage.success('新增成功')
+  }
+
   createDialogVisible.value = false
   resetCreateForm()
   await loadQuestions()
 }
 
-const del = async (id) => {
-  await ElMessageBox.confirm('确认删除该题目吗？', '提示')
-  await deleteQuestionApi(id)
-  ElMessage.success('删除成功')
-  await loadQuestions()
+const removeAsset = (assetId) => {
+  uploadedAssets.value = uploadedAssets.value.filter(asset => asset.assetId !== assetId)
 }
 
-const edit = async (id) => {
-  await updateQuestionApi(id)
-  ElMessage.success('修改接口占位调用成功（暂未实现具体修改逻辑）')
+const del = async (row) => {
+  if (!row || !row.id) {
+    ElMessage.warning('题目ID无效，无法删除')
+    return
+  }
+  await ElMessageBox.confirm('确认删除该题目吗？若已被试卷引用将无法删除。', '提示')
+  await deleteQuestionApi(row.id)
+  ElMessage.success('删除成功')
+  await loadQuestions()
 }
 
 const uploadImage = async (uploadOption) => {
@@ -505,6 +660,13 @@ onMounted(async () => {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.asset-preview-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
 }
 
 .asset-thumb {

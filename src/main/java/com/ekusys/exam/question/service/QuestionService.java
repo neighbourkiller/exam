@@ -7,16 +7,22 @@ import com.ekusys.exam.common.api.PageResponse;
 import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.question.dto.QuestionCreateRequest;
+import com.ekusys.exam.question.dto.QuestionImageUploadView;
 import com.ekusys.exam.question.dto.QuestionQueryRequest;
 import com.ekusys.exam.question.dto.QuestionSubjectOptionView;
+import com.ekusys.exam.question.dto.QuestionUpdateRequest;
 import com.ekusys.exam.question.dto.QuestionView;
+import com.ekusys.exam.repository.entity.PaperQuestion;
 import com.ekusys.exam.repository.entity.Question;
 import com.ekusys.exam.repository.entity.QuestionAsset;
 import com.ekusys.exam.repository.entity.Subject;
+import com.ekusys.exam.repository.mapper.PaperQuestionMapper;
 import com.ekusys.exam.repository.mapper.QuestionAssetMapper;
 import com.ekusys.exam.repository.mapper.QuestionMapper;
 import com.ekusys.exam.repository.mapper.SubjectMapper;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -30,13 +36,16 @@ public class QuestionService {
     private final QuestionMapper questionMapper;
     private final SubjectMapper subjectMapper;
     private final QuestionAssetMapper questionAssetMapper;
+    private final PaperQuestionMapper paperQuestionMapper;
 
     public QuestionService(QuestionMapper questionMapper,
                            SubjectMapper subjectMapper,
-                           QuestionAssetMapper questionAssetMapper) {
+                           QuestionAssetMapper questionAssetMapper,
+                           PaperQuestionMapper paperQuestionMapper) {
         this.questionMapper = questionMapper;
         this.subjectMapper = subjectMapper;
         this.questionAssetMapper = questionAssetMapper;
+        this.paperQuestionMapper = paperQuestionMapper;
     }
 
     public PageResponse<QuestionView> query(QuestionQueryRequest request) {
@@ -53,7 +62,7 @@ public class QuestionService {
             .pageNum(page.getCurrent())
             .pageSize(page.getSize())
             .total(page.getTotal())
-            .records(page.getRecords().stream().map(q -> toView(q, subjectNameMap)).toList())
+            .records(page.getRecords().stream().map(q -> toView(q, subjectNameMap, null)).toList())
             .build();
     }
 
@@ -69,19 +78,23 @@ public class QuestionService {
     @Transactional
     public Long create(QuestionCreateRequest request) {
         Question question = new Question();
-        fill(request, question);
+        fillCreate(request, question);
         question.setCreatorId(SecurityUtils.getCurrentUserId());
         questionMapper.insert(question);
-        bindAssetsToQuestion(question.getId(), request.getAssetIds());
+        syncAssetsForQuestion(question.getId(), request.getAssetIds());
         return question.getId();
     }
 
-    public void update(Long id) {
+    @Transactional
+    public void update(Long id, QuestionUpdateRequest request) {
         Question question = questionMapper.selectById(id);
         if (question == null) {
             throw new BusinessException("题目不存在");
         }
         ensureManagePermission(question);
+        fillUpdate(request, question);
+        questionMapper.updateById(question);
+        syncAssetsForQuestion(id, request.getAssetIds());
     }
 
     @Transactional
@@ -91,6 +104,12 @@ public class QuestionService {
             throw new BusinessException("题目不存在");
         }
         ensureManagePermission(question);
+        Long quoteCount = paperQuestionMapper.selectCount(
+            new LambdaQueryWrapper<PaperQuestion>().eq(PaperQuestion::getQuestionId, id)
+        );
+        if (quoteCount != null && quoteCount > 0) {
+            throw new BusinessException("题目已被试卷引用，无法删除");
+        }
         questionAssetMapper.delete(new LambdaQueryWrapper<QuestionAsset>().eq(QuestionAsset::getQuestionId, id));
         questionMapper.deleteById(id);
     }
@@ -101,10 +120,10 @@ public class QuestionService {
             throw new BusinessException("题目不存在");
         }
         Map<Long, String> subjectNameMap = buildSubjectNameMap(List.of(question));
-        return toView(question, subjectNameMap);
+        return toView(question, subjectNameMap, listAssetsByQuestionId(id));
     }
 
-    private void fill(QuestionCreateRequest request, Question question) {
+    private void fillCreate(QuestionCreateRequest request, Question question) {
         question.setSubjectId(request.getSubjectId());
         question.setType(request.getType().name());
         question.setDifficulty(request.getDifficulty().name());
@@ -115,7 +134,20 @@ public class QuestionService {
         question.setDefaultScore(request.getDefaultScore());
     }
 
-    private QuestionView toView(Question q, Map<Long, String> subjectNameMap) {
+    private void fillUpdate(QuestionUpdateRequest request, Question question) {
+        question.setSubjectId(request.getSubjectId());
+        question.setType(request.getType().name());
+        question.setDifficulty(request.getDifficulty().name());
+        question.setContent(request.getContent());
+        question.setOptionsJson(request.getOptionsJson());
+        question.setAnswer(request.getAnswer());
+        question.setAnalysis(request.getAnalysis());
+        question.setDefaultScore(request.getDefaultScore());
+    }
+
+    private QuestionView toView(Question q,
+                                Map<Long, String> subjectNameMap,
+                                List<QuestionImageUploadView> assets) {
         return QuestionView.builder()
             .id(q.getId())
             .subjectId(q.getSubjectId())
@@ -127,6 +159,8 @@ public class QuestionService {
             .answer(q.getAnswer())
             .analysis(q.getAnalysis())
             .defaultScore(q.getDefaultScore())
+            .canManage(canManage(q))
+            .assets(assets)
             .build();
     }
 
@@ -156,37 +190,102 @@ public class QuestionService {
         return SecurityUtils.getCurrentRoles().contains("ADMIN");
     }
 
-    private void bindAssetsToQuestion(Long questionId, List<Long> assetIds) {
-        if (assetIds == null || assetIds.isEmpty()) {
-            return;
+    private boolean canManage(Question question) {
+        if (isCurrentUserAdmin()) {
+            return true;
         }
-        List<Long> uniqueIds = assetIds.stream().filter(id -> id != null).distinct().toList();
-        if (uniqueIds.isEmpty()) {
-            return;
-        }
-
-        List<QuestionAsset> assets = questionAssetMapper.selectList(
-            new LambdaQueryWrapper<QuestionAsset>().in(QuestionAsset::getId, uniqueIds)
-        );
-        if (assets.size() != uniqueIds.size()) {
-            throw new BusinessException("存在无效的附件ID");
-        }
-
         Long currentUserId = SecurityUtils.getCurrentUserId();
-        boolean admin = isCurrentUserAdmin();
-        for (QuestionAsset asset : assets) {
-            if (!admin && (currentUserId == null || !currentUserId.equals(asset.getUploaderId()))) {
-                throw new BusinessException("无权绑定他人上传的附件");
+        return currentUserId != null
+            && question.getCreatorId() != null
+            && currentUserId.equals(question.getCreatorId());
+    }
+
+    private List<QuestionImageUploadView> listAssetsByQuestionId(Long questionId) {
+        return questionAssetMapper.selectList(
+            new LambdaQueryWrapper<QuestionAsset>()
+                .eq(QuestionAsset::getQuestionId, questionId)
+                .orderByAsc(QuestionAsset::getId)
+        ).stream().map(asset -> QuestionImageUploadView.builder()
+            .assetId(asset.getId())
+            .url(asset.getUrl())
+            .objectKey(asset.getObjectKey())
+            .originalName(asset.getOriginalName())
+            .size(asset.getSize())
+            .fileType(asset.getFileType())
+            .build()).toList();
+    }
+
+    private void syncAssetsForQuestion(Long questionId, List<Long> assetIds) {
+        List<QuestionAsset> currentAssets = questionAssetMapper.selectList(
+            new LambdaQueryWrapper<QuestionAsset>().eq(QuestionAsset::getQuestionId, questionId)
+        );
+        Set<Long> currentIds = currentAssets.stream()
+            .map(QuestionAsset::getId)
+            .filter(id -> id != null)
+            .collect(Collectors.toSet());
+
+        List<Long> uniqueTargetIds = normalizeAssetIds(assetIds);
+        Set<Long> targetIds = new LinkedHashSet<>(uniqueTargetIds);
+
+        if (!targetIds.isEmpty()) {
+            List<QuestionAsset> targetAssets = questionAssetMapper.selectList(
+                new LambdaQueryWrapper<QuestionAsset>().in(QuestionAsset::getId, targetIds)
+            );
+            if (targetAssets.size() != targetIds.size()) {
+                throw new BusinessException("存在无效的附件ID");
             }
-            if (asset.getQuestionId() != null && !questionId.equals(asset.getQuestionId())) {
-                throw new BusinessException("附件已绑定到其他题目");
+            for (QuestionAsset asset : targetAssets) {
+                validateAssetManagePermission(questionId, asset);
+            }
+        }
+
+        for (Long assetId : targetIds) {
+            if (currentIds.contains(assetId)) {
+                continue;
             }
             questionAssetMapper.update(
                 null,
                 new LambdaUpdateWrapper<QuestionAsset>()
-                    .eq(QuestionAsset::getId, asset.getId())
+                    .eq(QuestionAsset::getId, assetId)
                     .set(QuestionAsset::getQuestionId, questionId)
             );
         }
+
+        for (Long assetId : currentIds) {
+            if (targetIds.contains(assetId)) {
+                continue;
+            }
+            questionAssetMapper.update(
+                null,
+                new LambdaUpdateWrapper<QuestionAsset>()
+                    .eq(QuestionAsset::getId, assetId)
+                    .set(QuestionAsset::getQuestionId, null)
+            );
+        }
+    }
+
+    private void validateAssetManagePermission(Long questionId, QuestionAsset asset) {
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        boolean admin = isCurrentUserAdmin();
+        if (!admin && (currentUserId == null || !currentUserId.equals(asset.getUploaderId()))) {
+            throw new BusinessException("无权绑定他人上传的附件");
+        }
+        if (asset.getQuestionId() != null && !questionId.equals(asset.getQuestionId())) {
+            throw new BusinessException("附件已绑定到其他题目");
+        }
+    }
+
+    private List<Long> normalizeAssetIds(List<Long> assetIds) {
+        if (assetIds == null || assetIds.isEmpty()) {
+            return List.of();
+        }
+        List<Long> ids = new ArrayList<>();
+        for (Long assetId : assetIds) {
+            if (assetId == null || ids.contains(assetId)) {
+                continue;
+            }
+            ids.add(assetId);
+        }
+        return ids;
     }
 }
