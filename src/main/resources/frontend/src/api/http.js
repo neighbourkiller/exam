@@ -21,7 +21,10 @@ http.interceptors.response.use(
       return resp.data
     }
     ElMessage.error(resp?.message || '请求失败')
-    return Promise.reject(new Error(resp?.message || '请求失败'))
+    const businessError = new Error(resp?.message || '请求失败')
+    businessError.code = resp?.code || null
+    businessError.responseData = resp
+    return Promise.reject(businessError)
   },
   (error) => {
     const status = error?.response?.status
@@ -38,6 +41,9 @@ http.interceptors.response.use(
     }
 
     ElMessage.error(error?.response?.data?.message || error.message || '网络异常')
+    if (error?.response?.data?.code && !error.code) {
+      error.code = error.response.data.code
+    }
     return Promise.reject(error)
   }
 )

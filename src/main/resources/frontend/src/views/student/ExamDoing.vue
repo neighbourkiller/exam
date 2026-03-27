@@ -43,7 +43,7 @@ import { antiCheatApi, snapshotApi, startExamApi, submitExamApi } from '../../ap
 
 const route = useRoute()
 const router = useRouter()
-const examId = Number(route.params.id)
+const examId = String(route.params.id || '')
 
 const state = reactive({
   examId,

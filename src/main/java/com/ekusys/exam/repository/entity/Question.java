@@ -12,7 +12,7 @@ import lombok.EqualsAndHashCode;
 @TableName("question")
 public class Question extends BaseEntity {
 
-    @TableId(value = "id", type = IdType.AUTO)
+    @TableId(value = "id", type = IdType.ASSIGN_ID)
     private Long id;
     private Long subjectId;
     private String type;

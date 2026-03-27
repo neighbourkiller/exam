@@ -38,62 +38,61 @@ ON DUPLICATE KEY UPDATE name = VALUES(name), description = VALUES(description), 
 
 
 INSERT INTO question
-(subject_id, type, difficulty, content, options_json, answer, analysis, default_score, creator_id, create_time, update_time, create_by, update_by)
+(id, subject_id, type, difficulty, content, options_json, answer, analysis, default_score, creator_id, create_time, update_time, create_by, update_by)
 VALUES
 -- subject_id = 5001（Java）
-(5001, 'SINGLE', 'EASY',   'Java程序运行在什么环境中？',
+(61001, 5001, 'SINGLE', 'EASY',   'Java程序运行在什么环境中？',
  '[{"label":"A","value":"JVM"},{"label":"B","value":"CLR"},{"label":"C","value":"Node.js"},{"label":"D","value":"V8"}]',
  'A', '略', 5, 1001, NOW(), NOW(), 1001, 1001),
 
-(5001, 'MULTI',  'MEDIUM', '以下哪些属于Java语言特性？',
+(61002, 5001, 'MULTI',  'MEDIUM', '以下哪些属于Java语言特性？',
  '[{"label":"A","value":"面向对象"},{"label":"B","value":"跨平台"},{"label":"C","value":"指针算术"},{"label":"D","value":"自动垃圾回收"}]',
  'A,B,D', '略', 5, 1001, NOW(), NOW(), 1001, 1001),
 
-(5001, 'JUDGE',  'EASY',   'Java是一种编译型并运行在虚拟机上的语言。',
+(61003, 5001, 'JUDGE',  'EASY',   'Java是一种编译型并运行在虚拟机上的语言。',
  '[{"label":"A","value":"true"},{"label":"B","value":"false"}]',
  'A', '略', 5, 1001, NOW(), NOW(), 1001, 1001),
 
-(5001, 'BLANK',  'MEDIUM', 'Java中不可变字符串对应的类是____。',
+(61004, 5001, 'BLANK',  'MEDIUM', 'Java中不可变字符串对应的类是____。',
  NULL, 'String', '略', 5, 1001, NOW(), NOW(), 1001, 1001),
 
-(5001, 'SHORT',  'HARD',   '简述JVM内存结构的主要组成部分。',
+(61005, 5001, 'SHORT',  'HARD',   '简述JVM内存结构的主要组成部分。',
  NULL, '堆、虚拟机栈、本地方法栈、方法区、程序计数器', '略', 10, 1001, NOW(), NOW(), 1001, 1001),
 
 -- subject_id = 5002（Spring Boot）
-(5002, 'SINGLE', 'EASY',   'Spring Boot默认内嵌Web容器常用端口是？',
+(61006, 5002, 'SINGLE', 'EASY',   'Spring Boot默认内嵌Web容器常用端口是？',
  '[{"label":"A","value":"80"},{"label":"B","value":"8080"},{"label":"C","value":"443"},{"label":"D","value":"3306"}]',
  'B', '略', 5, 1001, NOW(), NOW(), 1001, 1001),
 
-(5002, 'MULTI',  'MEDIUM', '以下哪些注解常用于Spring Boot Web开发？',
+(61007, 5002, 'MULTI',  'MEDIUM', '以下哪些注解常用于Spring Boot Web开发？',
  '[{"label":"A","value":"@RestController"},{"label":"B","value":"@RequestMapping"},{"label":"C","value":"@EntityScan"},{"label":"D","value":"@GetMapping"}]',
  'A,B,D', '略', 5, 1001, NOW(), NOW(), 1001, 1001),
 
-(5002, 'JUDGE',  'EASY',   '@SpringBootApplication包含@ComponentScan能力。',
+(61008, 5002, 'JUDGE',  'EASY',   '@SpringBootApplication包含@ComponentScan能力。',
  '[{"label":"A","value":"true"},{"label":"B","value":"false"}]',
  'A', '略', 5, 1001, NOW(), NOW(), 1001, 1001),
 
-(5002, 'BLANK',  'MEDIUM', 'Spring Boot默认Tomcat端口是____。',
+(61009, 5002, 'BLANK',  'MEDIUM', 'Spring Boot默认Tomcat端口是____。',
  NULL, '8080', '略', 5, 1001, NOW(), NOW(), 1001, 1001),
 
-(5002, 'SHORT',  'HARD',   '简述Spring Boot自动配置的大致原理。',
+(61010, 5002, 'SHORT',  'HARD',   '简述Spring Boot自动配置的大致原理。',
  NULL, '通过@EnableAutoConfiguration加载META-INF/spring/...自动配置类并按条件装配Bean', '略', 10, 1001, NOW(), NOW(), 1001, 1001),
 
 -- subject_id = 5003（数据库/SQL）
-(5003, 'SINGLE', 'EASY',   '关系型数据库中，主键的核心特性是？',
+(61011, 5003, 'SINGLE', 'EASY',   '关系型数据库中，主键的核心特性是？',
  '[{"label":"A","value":"可重复"},{"label":"B","value":"唯一且非空"},{"label":"C","value":"可为空"},{"label":"D","value":"仅用于排序"}]',
  'B', '略', 5, 1001, NOW(), NOW(), 1001, 1001),
 
-(5003, 'MULTI',  'MEDIUM', '索引的主要作用包括哪些？',
+(61012, 5003, 'MULTI',  'MEDIUM', '索引的主要作用包括哪些？',
  '[{"label":"A","value":"加快查询"},{"label":"B","value":"保证所有查询都更快"},{"label":"C","value":"可能增加写入开销"},{"label":"D","value":"可用于排序优化"}]',
  'A,C,D', '略', 5, 1001, NOW(), NOW(), 1001, 1001),
 
-(5003, 'JUDGE',  'EASY',   'LEFT JOIN会返回左表全部记录。',
+(61013, 5003, 'JUDGE',  'EASY',   'LEFT JOIN会返回左表全部记录。',
  '[{"label":"A","value":"true"},{"label":"B","value":"false"}]',
  'A', '略', 5, 1001, NOW(), NOW(), 1001, 1001),
 
-(5003, 'BLANK',  'MEDIUM', 'SQL中用于排序的关键字是____。',
+(61014, 5003, 'BLANK',  'MEDIUM', 'SQL中用于排序的关键字是____。',
  NULL, 'ORDER BY', '略', 5, 1001, NOW(), NOW(), 1001, 1001),
 
-(5003, 'SHORT',  'HARD',   '简述事务隔离级别及其意义。',
+(61015, 5003, 'SHORT',  'HARD',   '简述事务隔离级别及其意义。',
  NULL, '读未提交、读已提交、可重复读、串行化；用于平衡并发与一致性', '略', 10, 1001, NOW(), NOW(), 1001, 1001);
-

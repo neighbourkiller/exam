@@ -7,7 +7,7 @@ import lombok.Data;
 @Builder
 public class PaperQuestionView {
 
-    private Long questionId;
+    private String questionId;
     private String type;
     private String difficulty;
     private String content;

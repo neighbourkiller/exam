@@ -42,7 +42,7 @@
                 <el-option v-for="role in roleOptions" :key="role.id" :label="`${role.name}(${role.code})`" :value="role.id" />
               </el-select>
             </el-form-item>
-            <el-form-item label="班级ID"><el-input v-model.number="form.classId" /></el-form-item>
+            <el-form-item label="班级ID"><el-input v-model="form.classId" /></el-form-item>
             <el-button type="primary" @click="create">创建</el-button>
           </el-form>
         </el-card>
@@ -83,7 +83,7 @@ const form = reactive({
   realName: '',
   password: '123456',
   roleIds: [],
-  classId: null
+  classId: ''
 })
 
 const roleForm = reactive({ code: '', name: '' })
@@ -98,13 +98,17 @@ const load = async () => {
 }
 
 const create = async () => {
-  await createUserApi(form)
+  const payload = {
+    ...form,
+    classId: (form.classId || '').trim() || null
+  }
+  await createUserApi(payload)
   ElMessage.success('创建成功')
   form.username = ''
   form.realName = ''
   form.password = '123456'
   form.roleIds = []
-  form.classId = null
+  form.classId = ''
   await load()
 }
 

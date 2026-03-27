@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS subject (
 );
 
 CREATE TABLE IF NOT EXISTS question (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id BIGINT PRIMARY KEY,
     subject_id BIGINT NOT NULL,
     type VARCHAR(16) NOT NULL,
     difficulty VARCHAR(16) NOT NULL,
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS question (
 );
 
 CREATE TABLE IF NOT EXISTS question_asset (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id BIGINT PRIMARY KEY,
     question_id BIGINT,
     uploader_id BIGINT NOT NULL,
     file_type VARCHAR(16) NOT NULL,
@@ -107,7 +107,8 @@ CREATE TABLE IF NOT EXISTS paper (
     create_time DATETIME,
     update_time DATETIME,
     create_by BIGINT,
-    update_by BIGINT
+    update_by BIGINT,
+    KEY idx_paper_teacher_subject (teacher_id, subject_id)
 );
 
 CREATE TABLE IF NOT EXISTS paper_question (
@@ -120,7 +121,8 @@ CREATE TABLE IF NOT EXISTS paper_question (
     update_time DATETIME,
     create_by BIGINT,
     update_by BIGINT,
-    UNIQUE KEY uk_paper_question (paper_id, question_id)
+    UNIQUE KEY uk_paper_question (paper_id, question_id),
+    KEY idx_paper_question_paper_sort (paper_id, sort_order)
 );
 
 CREATE TABLE IF NOT EXISTS exam (

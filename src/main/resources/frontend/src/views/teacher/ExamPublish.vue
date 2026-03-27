@@ -5,7 +5,29 @@
     <el-form :model="form" label-width="110px">
       <el-row :gutter="12">
         <el-col :span="8"><el-form-item label="考试名称"><el-input v-model="form.name" /></el-form-item></el-col>
-        <el-col :span="8"><el-form-item label="试卷ID"><el-input v-model.number="form.paperId" /></el-form-item></el-col>
+        <el-col :span="8">
+          <el-form-item label="试卷">
+            <el-select
+              v-model="form.paperId"
+              filterable
+              clearable
+              placeholder="请选择试卷"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="paper in paperOptions"
+                :key="paper.id"
+                :label="paperLabel(paper)"
+                :value="paper.id"
+              >
+                <div class="paper-option-row">
+                  <span class="paper-option-id">{{ paper.id }}</span>
+                  <span>{{ paper.name }}</span>
+                </div>
+              </el-option>
+            </el-select>
+          </el-form-item>
+        </el-col>
         <el-col :span="8"><el-form-item label="及格线"><el-input v-model.number="form.passScore" /></el-form-item></el-col>
       </el-row>
       <el-row :gutter="12">
@@ -17,6 +39,7 @@
         <el-input v-model="classIdsText" placeholder="例如: 3001,3002" />
       </el-form-item>
       <el-button type="primary" @click="createExam">创建考试</el-button>
+      <el-button @click="loadPaperOptions">刷新试卷选项</el-button>
     </el-form>
 
     <el-divider />
@@ -39,9 +62,9 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { createExamApi, publishExamApi, teacherExamsApi } from '../../api'
+import { createExamApi, publishExamApi, queryPapersApi, teacherExamsApi } from '../../api'
 
 const now = new Date()
 const later = new Date(now.getTime() + 3600 * 1000)
@@ -57,9 +80,29 @@ const form = reactive({
 
 const classIdsText = ref('3001')
 const exams = ref([])
+const paperOptions = ref([])
+
+const paperLabel = (paper) => `${paper.id} - ${paper.name}`
+
+const loadPaperOptions = async () => {
+  const data = await queryPapersApi({
+    pageNum: 1,
+    pageSize: 200,
+    subjectId: null,
+    name: null
+  })
+  paperOptions.value = data.records || []
+}
 
 const createExam = async () => {
-  const targetClassIds = classIdsText.value.split(',').map((v) => Number(v.trim())).filter(Boolean)
+  if (!form.paperId) {
+    ElMessage.warning('请选择试卷')
+    return
+  }
+  const targetClassIds = classIdsText.value
+    .split(',')
+    .map((v) => v.trim())
+    .filter((v) => v)
   const payload = { ...form, targetClassIds }
   const id = await createExamApi(payload)
   ElMessage.success(`考试创建成功: ${id}`)
@@ -76,9 +119,27 @@ const loadExams = async () => {
   exams.value = await teacherExamsApi()
 }
 
-onMounted(loadExams)
+onMounted(async () => {
+  await loadPaperOptions()
+  await loadExams()
+})
 </script>
 
 <style scoped>
-.header { font-size: 18px; font-weight: 700; }
+.header {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.paper-option-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.paper-option-id {
+  color: #606266;
+  min-width: 84px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
 </style>

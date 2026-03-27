@@ -2,7 +2,7 @@
   <el-card class="page-card">
     <template #header><div class="header">数据看板 (ECharts)</div></template>
     <div class="toolbar">
-      <el-input v-model.number="examId" placeholder="输入考试ID" style="width: 200px" />
+      <el-input v-model="examId" placeholder="输入考试ID" style="width: 200px" />
       <el-button type="primary" @click="loadAll">加载统计</el-button>
     </div>
 
@@ -19,7 +19,7 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
 import { classTrendApi, scoreDistributionApi, wrongTopicsApi } from '../../api'
 
-const examId = ref(null)
+const examId = ref('')
 const distRef = ref(null)
 const trendRef = ref(null)
 const wrongRef = ref(null)

@@ -15,7 +15,10 @@ export const deleteQuestionApi = (id) => http.delete(`/questions/${id}`)
 
 export const createManualPaperApi = (data) => http.post('/papers/manual', data)
 export const createAutoPaperApi = (data) => http.post('/papers/auto-generate', data)
+export const queryPapersApi = (data) => http.post('/papers/query', data)
 export const paperDetailApi = (id) => http.get(`/papers/${id}`)
+export const updatePaperApi = (id, data) => http.put(`/papers/${id}`, data)
+export const deletePaperApi = (id) => http.delete(`/papers/${id}`)
 
 export const createExamApi = (data) => http.post('/exams', data)
 export const publishExamApi = (id) => http.post(`/exams/${id}/publish`)
