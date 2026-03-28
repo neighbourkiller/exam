@@ -8,7 +8,7 @@ import lombok.Data;
 @Builder
 public class QuestionView {
 
-    private Long id;
+    private String id;
     private Long subjectId;
     private String subjectName;
     private String type;

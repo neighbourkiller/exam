@@ -17,7 +17,7 @@
             v-for="course in subjectOptions"
             :key="course.id"
             :label="courseLabel(course)"
-            :value="course.id"
+            :value="String(course.id)"
           >
             <div class="course-option-row">
               <span class="course-option-id">{{ course.id }}</span>
@@ -93,7 +93,7 @@
                   v-for="course in subjectOptions"
                   :key="course.id"
                   :label="courseLabel(course)"
-                  :value="course.id"
+                  :value="String(course.id)"
                 >
                   <div class="course-option-row">
                     <span class="course-option-id">{{ course.id }}</span>
@@ -276,6 +276,12 @@ const singleAnswerValue = ref('')
 const multiAnswerValues = ref([])
 
 const courseLabel = (course) => `${course.id} - ${course.name}`
+const normalizeId = (value) => (value === null || value === undefined ? null : String(value))
+const normalizeQuestionRecords = (records) =>
+  (records || []).map(item => ({
+    ...item,
+    id: normalizeId(item?.id)
+  }))
 
 const loadSubjectOptions = async () => {
   subjectOptions.value = await listQuestionSubjectsApi()
@@ -290,7 +296,7 @@ const loadQuestions = async () => {
     difficulty: query.difficulty || null
   }
   const data = await queryQuestionsApi(payload)
-  tableData.value = data.records || []
+  tableData.value = normalizeQuestionRecords(data.records)
 }
 
 const optionLabel = (index) => String.fromCharCode(65 + index)
@@ -347,9 +353,9 @@ const normalizeUploadedAssets = (assets) => {
     return []
   }
   return assets
-    .filter(asset => asset && asset.assetId)
+    .filter(asset => asset && asset.assetId !== null && asset.assetId !== undefined)
     .map(asset => ({
-      assetId: asset.assetId,
+      assetId: normalizeId(asset.assetId),
       url: asset.url,
       objectKey: asset.objectKey,
       originalName: asset.originalName,
@@ -398,7 +404,8 @@ const syncAnswerControlsFromRaw = () => {
 }
 
 const openEditDialog = async (row) => {
-  if (!row || !row.id) {
+  const questionId = normalizeId(row?.id)
+  if (!questionId) {
     ElMessage.warning('题目ID无效，无法修改')
     return
   }
@@ -409,12 +416,12 @@ const openEditDialog = async (row) => {
 
   formHydrating.value = true
   try {
-    const detail = await getQuestionDetailApi(row.id)
+    const detail = await getQuestionDetailApi(questionId)
     dialogMode.value = 'edit'
-    editingQuestionId.value = row.id
+    editingQuestionId.value = questionId
 
     Object.assign(form, {
-      subjectId: detail.subjectId ?? null,
+      subjectId: normalizeId(detail.subjectId),
       type: detail.type || 'SINGLE',
       difficulty: detail.difficulty || 'EASY',
       content: detail.content || '',
@@ -559,7 +566,9 @@ const buildPayload = () => {
     ...form,
     answer,
     optionsJson,
-    assetIds: uploadedAssets.value.map(asset => asset.assetId)
+    assetIds: uploadedAssets.value
+      .map(asset => normalizeId(asset.assetId))
+      .filter(assetId => !!assetId)
   }
 }
 
@@ -591,12 +600,13 @@ const removeAsset = (assetId) => {
 }
 
 const del = async (row) => {
-  if (!row || !row.id) {
+  const questionId = normalizeId(row?.id)
+  if (!questionId) {
     ElMessage.warning('题目ID无效，无法删除')
     return
   }
   await ElMessageBox.confirm('确认删除该题目吗？若已被试卷引用将无法删除。', '提示')
-  await deleteQuestionApi(row.id)
+  await deleteQuestionApi(questionId)
   ElMessage.success('删除成功')
   await loadQuestions()
 }
@@ -606,10 +616,14 @@ const uploadImage = async (uploadOption) => {
   formData.append('file', uploadOption.file)
   try {
     const result = await uploadQuestionImageApi(formData)
-    uploadedAssets.value = [...uploadedAssets.value, result]
+    const normalized = normalizeUploadedAssets([result])[0]
+    if (!normalized) {
+      throw new Error('上传成功但未返回有效附件ID')
+    }
+    uploadedAssets.value = [...uploadedAssets.value, normalized]
     ElMessage.success('插图上传成功')
     if (uploadOption.onSuccess) {
-      uploadOption.onSuccess(result)
+      uploadOption.onSuccess(normalized)
     }
   } catch (error) {
     if (uploadOption.onError) {

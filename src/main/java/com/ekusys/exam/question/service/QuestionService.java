@@ -149,7 +149,7 @@ public class QuestionService {
                                 Map<Long, String> subjectNameMap,
                                 List<QuestionImageUploadView> assets) {
         return QuestionView.builder()
-            .id(q.getId())
+            .id(toIdString(q.getId()))
             .subjectId(q.getSubjectId())
             .subjectName(subjectNameMap.get(q.getSubjectId()))
             .type(q.getType())
@@ -206,7 +206,7 @@ public class QuestionService {
                 .eq(QuestionAsset::getQuestionId, questionId)
                 .orderByAsc(QuestionAsset::getId)
         ).stream().map(asset -> QuestionImageUploadView.builder()
-            .assetId(asset.getId())
+            .assetId(toIdString(asset.getId()))
             .url(asset.getUrl())
             .objectKey(asset.getObjectKey())
             .originalName(asset.getOriginalName())
@@ -287,5 +287,9 @@ public class QuestionService {
             ids.add(assetId);
         }
         return ids;
+    }
+
+    private String toIdString(Long id) {
+        return id == null ? null : String.valueOf(id);
     }
 }

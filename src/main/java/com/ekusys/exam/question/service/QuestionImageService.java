@@ -67,7 +67,7 @@ public class QuestionImageService {
         questionAssetMapper.insert(asset);
 
         return QuestionImageUploadView.builder()
-            .assetId(asset.getId())
+            .assetId(asset.getId() == null ? null : String.valueOf(asset.getId()))
             .url(url)
             .objectKey(objectKey)
             .originalName(file.getOriginalFilename())

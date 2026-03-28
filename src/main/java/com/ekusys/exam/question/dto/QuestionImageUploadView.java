@@ -7,7 +7,7 @@ import lombok.Data;
 @Builder
 public class QuestionImageUploadView {
 
-    private Long assetId;
+    private String assetId;
     private String url;
     private String objectKey;
     private String originalName;
