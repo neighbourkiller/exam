@@ -138,10 +138,12 @@
         </el-table-column>
         <el-table-column prop="totalScore" label="总分" width="90" />
         <el-table-column prop="teacherId" label="出卷人" width="100" />
-        <el-table-column prop="createTime" label="创建时间" width="190" />
+        <el-table-column label="创建时间" width="190">
+          <template #default="scope">{{ formatDateTime(scope.row.createTime) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="240">
           <template #default="scope">
-            <el-button size="small" @click="viewPaper(scope.row)">查看</el-button>
+            <el-button size="small" @click="openPreviewDialog(scope.row)">预览</el-button>
             <el-button
               size="small"
               type="primary"
@@ -288,6 +290,56 @@
         <el-button type="primary" @click="submitManualPaper">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="previewDialogVisible"
+      title="试卷预览"
+      width="900px"
+      destroy-on-close
+      @closed="resetPreviewDialog"
+    >
+      <div v-loading="previewLoading" class="preview-body">
+        <div v-if="previewPaper.id" class="preview-paper">
+          <div class="preview-paper-header">
+            <h2 class="preview-paper-title">{{ previewPaper.name }}</h2>
+            <p class="preview-paper-subtitle">
+              课程：{{ previewPaper.subjectName || previewPaper.subjectId }} | 出卷人：{{ previewPaper.teacherId || '-' }} | 总分：{{ previewPaper.totalScore }}
+            </p>
+            <p v-if="previewPaper.description" class="preview-paper-description">
+              说明：{{ previewPaper.description }}
+            </p>
+          </div>
+          <el-divider />
+          <div class="preview-question-list">
+            <section
+              v-for="question in previewQuestions"
+              :key="question.previewKey"
+              class="preview-question-item"
+            >
+              <div class="preview-question-title">
+                <span class="preview-question-index">{{ question.displayOrder }}.</span>
+                <span class="preview-question-type">[{{ question.typeLabel }}]</span>
+                <span class="preview-question-content">{{ question.content || '-' }}</span>
+                <span class="preview-question-score">（{{ question.score || 0 }}分）</span>
+              </div>
+              <div v-if="question.options.length" class="preview-option-list">
+                <p
+                  v-for="option in question.options"
+                  :key="`${question.previewKey}-${option.label}`"
+                  class="preview-option-item"
+                >
+                  {{ option.label }}. {{ option.value }}
+                </p>
+              </div>
+            </section>
+          </div>
+        </div>
+        <el-empty v-else-if="!previewLoading" description="暂无可预览内容" />
+      </div>
+      <template #footer>
+        <el-button @click="previewDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </el-card>
 </template>
 
@@ -334,6 +386,19 @@ const paperQuery = reactive({
 })
 const paperList = ref([])
 const paperTotal = ref(0)
+const previewDialogVisible = ref(false)
+const previewLoading = ref(false)
+const previewLoadSeq = ref(0)
+const previewPaper = reactive({
+  id: null,
+  name: '',
+  subjectId: null,
+  subjectName: '',
+  description: '',
+  totalScore: 0,
+  teacherId: null,
+  questions: []
+})
 
 const manualDialogVisible = ref(false)
 const manualMode = ref('create')
@@ -356,8 +421,79 @@ const selectedQuestions = ref([])
 
 const manualDialogTitle = computed(() => (manualMode.value === 'edit' ? '修改试卷' : '手动组卷'))
 const selectedQuestionIdSet = computed(() => new Set(selectedQuestions.value.map(item => item.questionId)))
+const questionTypeLabelMap = {
+  SINGLE: '单选题',
+  MULTI: '多选题',
+  JUDGE: '判断题',
+  BLANK: '填空题',
+  SHORT: '简答题'
+}
+const manualTypeOrderMap = {
+  SINGLE: 1,
+  MULTI: 2,
+  BLANK: 3,
+  JUDGE: 4,
+  SHORT: 5
+}
+const previewQuestions = computed(() =>
+  (previewPaper.questions || [])
+    .slice()
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+    .map((question, index) => ({
+      ...question,
+      displayOrder: index + 1,
+      typeLabel: questionTypeLabelMap[question.type] || question.type || '未知题型',
+      options: parseQuestionOptions(question.optionsJson),
+      previewKey: question.questionId || `${question.sortOrder || index + 1}-${index}`
+    }))
+)
 
 const courseLabel = (course) => `${course.id} - ${course.name}`
+
+const parseQuestionOptions = (optionsJson) => {
+  if (!optionsJson) {
+    return []
+  }
+  try {
+    const parsed = JSON.parse(optionsJson)
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+    return parsed
+      .map((item, index) => ({
+        label: item?.label || String.fromCharCode(65 + index),
+        value: item?.value == null ? '' : String(item.value)
+      }))
+      .filter(option => option.value)
+  } catch (error) {
+    return []
+  }
+}
+
+const formatDateTime = (value) => {
+  if (!value) {
+    return '-'
+  }
+  if (Array.isArray(value) && value.length >= 6) {
+    const [year, month, day, hour, minute, second] = value
+    return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`
+  }
+  const text = String(value).trim()
+  if (!text) {
+    return '-'
+  }
+  const normalized = text
+    .replace('T', ' ')
+    .replaceAll('：', ':')
+  const matched = normalized.match(
+    /(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s+(\d{1,2})[:\-](\d{1,2})[:\-](\d{1,2})/
+  )
+  if (matched) {
+    const [, year, month, day, hour, minute, second] = matched
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')} ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}:${second.padStart(2, '0')}`
+  }
+  return normalized
+}
 
 const loadSubjectOptions = async () => {
   subjectOptions.value = await listQuestionSubjectsApi()
@@ -412,9 +548,47 @@ const searchPaperList = async () => {
   await loadPaperList()
 }
 
-const viewPaper = async (row) => {
-  paperId.value = row.id
-  await loadPaper()
+const resetPreviewDialog = () => {
+  previewLoadSeq.value += 1
+  Object.assign(previewPaper, {
+    id: null,
+    name: '',
+    subjectId: null,
+    subjectName: '',
+    description: '',
+    totalScore: 0,
+    teacherId: null,
+    questions: []
+  })
+  previewLoading.value = false
+}
+
+const openPreviewDialog = async (row) => {
+  const id = row?.id
+  if (!id) {
+    ElMessage.warning('试卷ID无效，无法预览')
+    return
+  }
+  previewDialogVisible.value = true
+  resetPreviewDialog()
+  previewLoading.value = true
+  const seq = ++previewLoadSeq.value
+  try {
+    const detail = await paperDetailApi(id)
+    if (seq !== previewLoadSeq.value) {
+      return
+    }
+    Object.assign(previewPaper, detail)
+  } catch (error) {
+    if (seq === previewLoadSeq.value) {
+      previewDialogVisible.value = false
+    }
+    throw error
+  } finally {
+    if (seq === previewLoadSeq.value) {
+      previewLoading.value = false
+    }
+  }
 }
 
 const resetManualDialog = () => {
@@ -436,7 +610,16 @@ const openCreateManualDialog = () => {
 }
 
 const normalizeSelectedQuestions = (questions) => {
-  selectedQuestions.value = (questions || []).map((item, index) => ({
+  const sorted = (questions || [])
+    .slice()
+    .sort((a, b) => {
+      const typeDiff = (manualTypeOrderMap[a.type] || 99) - (manualTypeOrderMap[b.type] || 99)
+      if (typeDiff !== 0) {
+        return typeDiff
+      }
+      return (a.sortOrder || 0) - (b.sortOrder || 0)
+    })
+  selectedQuestions.value = sorted.map((item, index) => ({
     sortOrder: index + 1,
     questionId: item.questionId,
     type: item.type,
@@ -487,14 +670,19 @@ const addQuestionToManual = (question) => {
   if (selectedQuestionIdSet.value.has(question.id)) {
     return
   }
-  selectedQuestions.value.push({
+  const newItem = {
     sortOrder: selectedQuestions.value.length + 1,
     questionId: question.id,
     type: question.type,
     difficulty: question.difficulty,
     content: question.content,
     score: question.defaultScore || 1
-  })
+  }
+  if (manualMode.value === 'edit') {
+    normalizeSelectedQuestions([...selectedQuestions.value, newItem])
+    return
+  }
+  selectedQuestions.value.push(newItem)
 }
 
 const renumberSelectedQuestions = () => {
@@ -660,5 +848,84 @@ onMounted(async () => {
   color: #606266;
   min-width: 64px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.preview-body {
+  min-height: 220px;
+}
+
+.preview-paper {
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  padding: 18px 20px;
+  background: #fff;
+}
+
+.preview-paper-header {
+  text-align: center;
+}
+
+.preview-paper-title {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.preview-paper-subtitle {
+  margin: 0;
+  color: #606266;
+}
+
+.preview-paper-description {
+  margin: 10px 0 0;
+  color: #303133;
+}
+
+.preview-question-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.preview-question-item {
+  padding-bottom: 10px;
+  border-bottom: 1px dashed #e4e7ed;
+}
+
+.preview-question-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.preview-question-title {
+  line-height: 1.8;
+  color: #303133;
+}
+
+.preview-question-index {
+  margin-right: 6px;
+  font-weight: 700;
+}
+
+.preview-question-type {
+  margin-right: 8px;
+  color: #409eff;
+  font-weight: 600;
+}
+
+.preview-question-score {
+  margin-left: 8px;
+  color: #909399;
+}
+
+.preview-option-list {
+  margin-top: 6px;
+  padding-left: 26px;
+}
+
+.preview-option-item {
+  margin: 4px 0;
+  color: #606266;
 }
 </style>
