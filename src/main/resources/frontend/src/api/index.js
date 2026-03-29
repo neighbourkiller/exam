@@ -48,3 +48,16 @@ export const createRoleApi = (data) => http.post('/admin/roles', data)
 export const listCoursesApi = () => http.get('/admin/courses')
 export const createCourseApi = (data) => http.post('/admin/courses', data)
 export const updateCourseApi = (id, data) => http.put(`/admin/courses/${id}`, data)
+export const listTeachingClassesApi = () => http.get('/admin/teaching-classes')
+export const createTeachingClassApi = (data) => http.post('/admin/teaching-classes', data)
+export const updateTeachingClassApi = (id, data) => http.put(`/admin/teaching-classes/${id}`, data)
+
+export const examTeachingClassesApi = () => http.get('/exams/teaching-classes')
+
+export const teacherClassesApi = () => http.get('/teacher/classes')
+export const teacherClassStudentsApi = (classId) => http.get(`/teacher/classes/${classId}/students`)
+export const teacherClassAddStudentsApi = (classId, data) => http.post(`/teacher/classes/${classId}/students`, data)
+export const teacherClassRemoveStudentApi = (classId, studentId) =>
+  http.delete(`/teacher/classes/${classId}/students/${studentId}`)
+export const teacherClassStudentCandidatesApi = (classId, data) =>
+  http.post(`/teacher/classes/${classId}/student-candidates/query`, data)

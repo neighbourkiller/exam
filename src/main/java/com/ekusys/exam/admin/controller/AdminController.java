@@ -7,6 +7,9 @@ import com.ekusys.exam.admin.dto.CourseView;
 import com.ekusys.exam.admin.dto.ResetPasswordRequest;
 import com.ekusys.exam.admin.dto.RoleCreateRequest;
 import com.ekusys.exam.admin.dto.RoleView;
+import com.ekusys.exam.admin.dto.TeachingClassCreateRequest;
+import com.ekusys.exam.admin.dto.TeachingClassUpdateRequest;
+import com.ekusys.exam.admin.dto.TeachingClassView;
 import com.ekusys.exam.admin.dto.UserCreateRequest;
 import com.ekusys.exam.admin.dto.UserQueryRequest;
 import com.ekusys.exam.admin.dto.UserUpdateRequest;
@@ -94,6 +97,23 @@ public class AdminController {
     @PutMapping("/courses/{courseId}")
     public ApiResponse<Void> updateCourse(@PathVariable Long courseId, @Valid @RequestBody CourseUpdateRequest request) {
         adminService.updateCourse(courseId, request);
+        return ApiResponse.ok("更新成功", null);
+    }
+
+    @GetMapping("/teaching-classes")
+    public ApiResponse<List<TeachingClassView>> listTeachingClasses() {
+        return ApiResponse.ok(adminService.listTeachingClasses());
+    }
+
+    @PostMapping("/teaching-classes")
+    public ApiResponse<Long> createTeachingClass(@Valid @RequestBody TeachingClassCreateRequest request) {
+        return ApiResponse.ok("创建成功", adminService.createTeachingClass(request));
+    }
+
+    @PutMapping("/teaching-classes/{id}")
+    public ApiResponse<Void> updateTeachingClass(@PathVariable Long id,
+                                                 @Valid @RequestBody TeachingClassUpdateRequest request) {
+        adminService.updateTeachingClass(id, request);
         return ApiResponse.ok("更新成功", null);
     }
 }

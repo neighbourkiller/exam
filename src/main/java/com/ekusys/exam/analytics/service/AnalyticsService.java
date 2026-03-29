@@ -4,21 +4,27 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ekusys.exam.analytics.dto.ClassTrendItem;
 import com.ekusys.exam.analytics.dto.ScoreDistributionItem;
 import com.ekusys.exam.analytics.dto.WrongTopicItem;
-import com.ekusys.exam.repository.entity.ClassRoom;
-import com.ekusys.exam.repository.entity.ClassStudent;
+import com.ekusys.exam.repository.entity.Exam;
+import com.ekusys.exam.repository.entity.Paper;
 import com.ekusys.exam.repository.entity.Question;
+import com.ekusys.exam.repository.entity.StudentTeachingClass;
 import com.ekusys.exam.repository.entity.Submission;
 import com.ekusys.exam.repository.entity.SubmissionAnswer;
-import com.ekusys.exam.repository.mapper.ClassRoomMapper;
-import com.ekusys.exam.repository.mapper.ClassStudentMapper;
+import com.ekusys.exam.repository.entity.TeachingClass;
+import com.ekusys.exam.repository.mapper.ExamMapper;
+import com.ekusys.exam.repository.mapper.PaperMapper;
 import com.ekusys.exam.repository.mapper.QuestionMapper;
+import com.ekusys.exam.repository.mapper.StudentTeachingClassMapper;
 import com.ekusys.exam.repository.mapper.SubmissionAnswerMapper;
 import com.ekusys.exam.repository.mapper.SubmissionMapper;
+import com.ekusys.exam.repository.mapper.TeachingClassMapper;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -26,19 +32,25 @@ public class AnalyticsService {
 
     private final SubmissionMapper submissionMapper;
     private final SubmissionAnswerMapper submissionAnswerMapper;
-    private final ClassStudentMapper classStudentMapper;
-    private final ClassRoomMapper classRoomMapper;
+    private final ExamMapper examMapper;
+    private final PaperMapper paperMapper;
+    private final StudentTeachingClassMapper studentTeachingClassMapper;
+    private final TeachingClassMapper teachingClassMapper;
     private final QuestionMapper questionMapper;
 
     public AnalyticsService(SubmissionMapper submissionMapper,
                             SubmissionAnswerMapper submissionAnswerMapper,
-                            ClassStudentMapper classStudentMapper,
-                            ClassRoomMapper classRoomMapper,
+                            ExamMapper examMapper,
+                            PaperMapper paperMapper,
+                            StudentTeachingClassMapper studentTeachingClassMapper,
+                            TeachingClassMapper teachingClassMapper,
                             QuestionMapper questionMapper) {
         this.submissionMapper = submissionMapper;
         this.submissionAnswerMapper = submissionAnswerMapper;
-        this.classStudentMapper = classStudentMapper;
-        this.classRoomMapper = classRoomMapper;
+        this.examMapper = examMapper;
+        this.paperMapper = paperMapper;
+        this.studentTeachingClassMapper = studentTeachingClassMapper;
+        this.teachingClassMapper = teachingClassMapper;
         this.questionMapper = questionMapper;
     }
 
@@ -76,27 +88,42 @@ public class AnalyticsService {
             return List.of();
         }
 
-        Map<Long, Long> studentClassMap = new HashMap<>();
-        for (Submission submission : submissions) {
-            ClassStudent cs = classStudentMapper.selectOne(new LambdaQueryWrapper<ClassStudent>()
-                .eq(ClassStudent::getStudentId, submission.getStudentId()).last("limit 1"));
-            if (cs != null) {
-                studentClassMap.put(submission.getStudentId(), cs.getClassId());
-            }
+        Long subjectId = findExamSubjectId(examId);
+        if (subjectId == null) {
+            return List.of();
         }
+
+        Set<Long> studentIds = submissions.stream().map(Submission::getStudentId).collect(Collectors.toSet());
+        if (studentIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<StudentTeachingClass> bindings = studentTeachingClassMapper.selectList(
+            new LambdaQueryWrapper<StudentTeachingClass>()
+                .in(StudentTeachingClass::getStudentId, studentIds)
+                .eq(StudentTeachingClass::getSubjectId, subjectId)
+                .eq(StudentTeachingClass::getEnrollStatus, "ACTIVE")
+        );
+        Map<Long, Long> studentClassMap = bindings.stream()
+            .collect(Collectors.toMap(StudentTeachingClass::getStudentId, StudentTeachingClass::getTeachingClassId, (a, b) -> a));
+
+        Set<Long> classIds = bindings.stream().map(StudentTeachingClass::getTeachingClassId).collect(Collectors.toSet());
+        Map<Long, TeachingClass> classMap = classIds.isEmpty()
+            ? Map.of()
+            : teachingClassMapper.selectBatchIds(classIds).stream()
+                .collect(Collectors.toMap(TeachingClass::getId, c -> c, (a, b) -> a));
 
         Map<Long, List<Integer>> classScores = new HashMap<>();
         for (Submission submission : submissions) {
             Long classId = studentClassMap.get(submission.getStudentId());
-            if (classId == null) {
-                continue;
+            if (classId != null) {
+                classScores.computeIfAbsent(classId, k -> new ArrayList<>()).add(submission.getTotalScore() == null ? 0 : submission.getTotalScore());
             }
-            classScores.computeIfAbsent(classId, k -> new ArrayList<>()).add(submission.getTotalScore() == null ? 0 : submission.getTotalScore());
         }
 
         List<ClassTrendItem> items = new ArrayList<>();
         for (Map.Entry<Long, List<Integer>> entry : classScores.entrySet()) {
-            ClassRoom classroom = classRoomMapper.selectById(entry.getKey());
+            TeachingClass classroom = classMap.get(entry.getKey());
             double avg = entry.getValue().stream().mapToInt(Integer::intValue).average().orElse(0);
             items.add(ClassTrendItem.builder()
                 .classId(entry.getKey())
@@ -148,5 +175,14 @@ public class AnalyticsService {
             .sorted((a, b) -> Double.compare(b.getWrongRate(), a.getWrongRate()))
             .limit(10)
             .toList();
+    }
+
+    private Long findExamSubjectId(Long examId) {
+        Exam exam = examMapper.selectById(examId);
+        if (exam == null || exam.getPaperId() == null) {
+            return null;
+        }
+        Paper paper = paperMapper.selectById(exam.getPaperId());
+        return paper == null ? null : paper.getSubjectId();
     }
 }

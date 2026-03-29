@@ -12,6 +12,7 @@ public class UserView {
     private String username;
     private String realName;
     private Boolean enabled;
-    private Long classId;
+    private String studentNo;
+    private List<TeachingClassView> teachingClasses;
     private List<RoleView> roles;
 }

@@ -11,16 +11,23 @@
       <el-table-column prop="id" label="ID" width="120" />
       <el-table-column prop="username" label="用户名" width="130" />
       <el-table-column prop="realName" label="姓名" width="130" />
+      <el-table-column prop="studentNo" label="学号" width="150" />
       <el-table-column label="角色">
         <template #default="scope">
           {{ (scope.row.roles || []).map((r) => r.code).join(', ') }}
         </template>
       </el-table-column>
+      <el-table-column label="教学班">
+        <template #default="scope">
+          {{ (scope.row.teachingClasses || []).map((c) => `${c.id}-${c.name || ''}`).join(', ') }}
+        </template>
+      </el-table-column>
       <el-table-column prop="enabled" label="状态" width="90">
         <template #default="scope">{{ scope.row.enabled ? '启用' : '禁用' }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="240">
+      <el-table-column label="操作" width="300">
         <template #default="scope">
+          <el-button type="primary" size="small" @click="openEdit(scope.row)">修改</el-button>
           <el-button type="warning" size="small" @click="reset(scope.row)">重置密码</el-button>
           <el-button type="danger" size="small" @click="del(scope.row.id)">删除</el-button>
         </template>
@@ -37,12 +44,24 @@
             <el-form-item label="用户名"><el-input v-model="form.username" /></el-form-item>
             <el-form-item label="姓名"><el-input v-model="form.realName" /></el-form-item>
             <el-form-item label="密码"><el-input v-model="form.password" /></el-form-item>
-            <el-form-item label="角色">
+          <el-form-item label="角色">
               <el-select v-model="form.roleIds" multiple>
                 <el-option v-for="role in roleOptions" :key="role.id" :label="`${role.name}(${role.code})`" :value="role.id" />
               </el-select>
             </el-form-item>
-            <el-form-item label="班级ID"><el-input v-model="form.classId" /></el-form-item>
+            <el-form-item v-if="createFormIsStudent" label="学号">
+              <el-input v-model="form.studentNo" clearable placeholder="学生角色可填写学号" />
+            </el-form-item>
+            <el-form-item v-if="createFormIsStudent" label="教学班">
+              <el-select v-model="form.teachingClassIds" multiple filterable clearable placeholder="可选多个教学班">
+                <el-option
+                  v-for="item in teachingClassOptions"
+                  :key="item.id"
+                  :label="teachingClassLabel(item)"
+                  :value="item.id"
+                />
+              </el-select>
+            </el-form-item>
             <el-button type="primary" @click="create">创建</el-button>
           </el-form>
         </el-card>
@@ -59,37 +78,115 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <el-dialog v-model="editDialogVisible" title="修改用户" width="560px">
+      <el-form :model="editForm" label-width="110px">
+        <el-form-item label="用户名">
+          <el-input v-model="editForm.username" disabled />
+        </el-form-item>
+        <el-form-item label="姓名">
+          <el-input v-model="editForm.realName" />
+        </el-form-item>
+        <el-form-item label="启用状态">
+          <el-switch v-model="editForm.enabled" />
+        </el-form-item>
+        <template v-if="editForm.isStudent">
+          <el-form-item label="学号">
+            <el-input v-model="editForm.studentNo" clearable />
+          </el-form-item>
+          <el-form-item label="教学班">
+            <el-select v-model="editForm.teachingClassIds" multiple filterable clearable placeholder="可选多个教学班">
+              <el-option
+                v-for="item in teachingClassOptions"
+                :key="item.id"
+                :label="teachingClassLabel(item)"
+                :value="item.id"
+              />
+            </el-select>
+          </el-form-item>
+        </template>
+      </el-form>
+      <template #footer>
+        <el-button @click="editDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveEdit">保存</el-button>
+      </template>
+    </el-dialog>
   </el-card>
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createRoleApi,
+  listTeachingClassesApi,
   createUserApi,
   deleteUserApi,
   queryUsersApi,
   resetPasswordApi,
-  rolesApi
+  rolesApi,
+  updateUserApi
 } from '../../api'
 
 const query = reactive({ pageNum: 1, pageSize: 20, keyword: '' })
 const users = ref([])
 const roleOptions = ref([])
+const teachingClassOptions = ref([])
+const editDialogVisible = ref(false)
+const editForm = reactive({
+  id: null,
+  username: '',
+  realName: '',
+  enabled: true,
+  studentNo: '',
+  teachingClassIds: [],
+  isStudent: false
+})
 
 const form = reactive({
   username: '',
   realName: '',
   password: '123456',
   roleIds: [],
-  classId: ''
+  studentNo: '',
+  teachingClassIds: []
 })
 
 const roleForm = reactive({ code: '', name: '' })
 
+const teachingClassLabel = (item) => `${item.id} - ${item.name || ''} (${item.subjectName || '未知课程'})`
+const createFormIsStudent = computed(() => {
+  const studentRole = roleOptions.value.find((role) => role.code === 'STUDENT')
+  if (!studentRole) {
+    return false
+  }
+  return (form.roleIds || []).some((roleId) => String(roleId) === String(studentRole.id))
+})
+
+watch(createFormIsStudent, (isStudent) => {
+  if (!isStudent) {
+    form.studentNo = ''
+    form.teachingClassIds = []
+  }
+})
+
+watch(
+  () => form.studentNo,
+  (value, oldValue) => {
+    if (!createFormIsStudent.value) return
+    const oldText = oldValue || ''
+    if (!form.username || form.username === oldText) {
+      form.username = value || ''
+    }
+  }
+)
+
 const loadRoles = async () => {
   roleOptions.value = await rolesApi()
+}
+
+const loadTeachingClasses = async () => {
+  teachingClassOptions.value = await listTeachingClassesApi()
 }
 
 const load = async () => {
@@ -98,9 +195,25 @@ const load = async () => {
 }
 
 const create = async () => {
+  const realName = (form.realName || '').trim()
+  if (!realName) {
+    ElMessage.warning('请输入姓名')
+    return
+  }
+  const isStudent = createFormIsStudent.value
+  const studentNo = isStudent ? ((form.studentNo || '').trim() || null) : null
+  const username = ((form.username || '').trim()) || (isStudent ? (studentNo || '') : '')
+  if (!username) {
+    ElMessage.warning('请输入用户名')
+    return
+  }
   const payload = {
-    ...form,
-    classId: (form.classId || '').trim() || null
+    username,
+    realName,
+    password: form.password,
+    roleIds: form.roleIds,
+    studentNo,
+    teachingClassIds: isStudent ? form.teachingClassIds : []
   }
   await createUserApi(payload)
   ElMessage.success('创建成功')
@@ -108,7 +221,39 @@ const create = async () => {
   form.realName = ''
   form.password = '123456'
   form.roleIds = []
-  form.classId = ''
+  form.studentNo = ''
+  form.teachingClassIds = []
+  await load()
+}
+
+const openEdit = (row) => {
+  const roles = (row.roles || []).map((r) => r.code)
+  const isStudent = roles.includes('STUDENT')
+  editForm.id = row.id
+  editForm.username = row.username || ''
+  editForm.realName = row.realName || ''
+  editForm.enabled = row.enabled !== false
+  editForm.studentNo = row.studentNo || ''
+  editForm.teachingClassIds = isStudent ? (row.teachingClasses || []).map((c) => c.id) : []
+  editForm.isStudent = isStudent
+  editDialogVisible.value = true
+}
+
+const saveEdit = async () => {
+  const realName = (editForm.realName || '').trim()
+  if (!realName) {
+    ElMessage.warning('请输入姓名')
+    return
+  }
+  const payload = {
+    realName,
+    enabled: !!editForm.enabled,
+    studentNo: editForm.isStudent ? ((editForm.studentNo || '').trim() || null) : null,
+    teachingClassIds: editForm.isStudent ? editForm.teachingClassIds : null
+  }
+  await updateUserApi(editForm.id, payload)
+  ElMessage.success('用户更新成功')
+  editDialogVisible.value = false
   await load()
 }
 
@@ -134,6 +279,7 @@ const createRole = async () => {
 
 onMounted(async () => {
   await loadRoles()
+  await loadTeachingClasses()
   await load()
 })
 </script>

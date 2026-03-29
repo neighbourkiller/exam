@@ -11,6 +11,7 @@ import com.ekusys.exam.paper.dto.ManualCreatePaperRequest;
 import com.ekusys.exam.paper.dto.ManualPaperQuestion;
 import com.ekusys.exam.paper.dto.PaperDetailView;
 import com.ekusys.exam.paper.dto.PaperListItemView;
+import com.ekusys.exam.paper.dto.PaperQuestionAssetView;
 import com.ekusys.exam.paper.dto.PaperQueryRequest;
 import com.ekusys.exam.paper.dto.PaperQuestionView;
 import com.ekusys.exam.paper.dto.PaperUpdateRequest;
@@ -18,10 +19,12 @@ import com.ekusys.exam.repository.entity.Exam;
 import com.ekusys.exam.repository.entity.Paper;
 import com.ekusys.exam.repository.entity.PaperQuestion;
 import com.ekusys.exam.repository.entity.Question;
+import com.ekusys.exam.repository.entity.QuestionAsset;
 import com.ekusys.exam.repository.entity.Subject;
 import com.ekusys.exam.repository.mapper.ExamMapper;
 import com.ekusys.exam.repository.mapper.PaperMapper;
 import com.ekusys.exam.repository.mapper.PaperQuestionMapper;
+import com.ekusys.exam.repository.mapper.QuestionAssetMapper;
 import com.ekusys.exam.repository.mapper.QuestionMapper;
 import com.ekusys.exam.repository.mapper.SubjectMapper;
 import java.util.ArrayList;
@@ -45,17 +48,20 @@ public class PaperService {
     private final PaperMapper paperMapper;
     private final PaperQuestionMapper paperQuestionMapper;
     private final QuestionMapper questionMapper;
+    private final QuestionAssetMapper questionAssetMapper;
     private final SubjectMapper subjectMapper;
     private final ExamMapper examMapper;
 
     public PaperService(PaperMapper paperMapper,
                         PaperQuestionMapper paperQuestionMapper,
                         QuestionMapper questionMapper,
+                        QuestionAssetMapper questionAssetMapper,
                         SubjectMapper subjectMapper,
                         ExamMapper examMapper) {
         this.paperMapper = paperMapper;
         this.paperQuestionMapper = paperQuestionMapper;
         this.questionMapper = questionMapper;
+        this.questionAssetMapper = questionAssetMapper;
         this.subjectMapper = subjectMapper;
         this.examMapper = examMapper;
     }
@@ -179,6 +185,7 @@ public class PaperService {
             ? Collections.emptyMap()
             : questionMapper.selectBatchIds(qIds).stream()
                 .collect(Collectors.toMap(Question::getId, q -> q, (a, b) -> a, HashMap::new));
+        Map<Long, List<PaperQuestionAssetView>> questionAssetMap = buildQuestionAssetMap(qIds);
 
         List<PaperQuestionView> questions = links.stream().map(link -> {
             Question q = questionMap.get(link.getQuestionId());
@@ -191,6 +198,7 @@ public class PaperService {
                 .answer(q == null ? null : q.getAnswer())
                 .score(link.getScore())
                 .sortOrder(link.getSortOrder())
+                .assets(questionAssetMap.getOrDefault(link.getQuestionId(), List.of()))
                 .build();
         }).toList();
 
@@ -332,6 +340,36 @@ public class PaperService {
         }
         return subjectMapper.selectList(new LambdaQueryWrapper<Subject>().in(Subject::getId, subjectIds)).stream()
             .collect(Collectors.toMap(Subject::getId, Subject::getName, (a, b) -> a));
+    }
+
+    private Map<Long, List<PaperQuestionAssetView>> buildQuestionAssetMap(List<Long> questionIds) {
+        if (questionIds == null || questionIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<QuestionAsset> assets = questionAssetMapper.selectList(
+            new LambdaQueryWrapper<QuestionAsset>()
+                .in(QuestionAsset::getQuestionId, questionIds)
+                .orderByAsc(QuestionAsset::getQuestionId, QuestionAsset::getId)
+        );
+        if (assets.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<Long, List<PaperQuestionAssetView>> result = new HashMap<>();
+        for (QuestionAsset asset : assets) {
+            if (asset.getQuestionId() == null) {
+                continue;
+            }
+            result.computeIfAbsent(asset.getQuestionId(), k -> new ArrayList<>())
+                .add(PaperQuestionAssetView.builder()
+                    .assetId(toIdString(asset.getId()))
+                    .url(asset.getUrl())
+                    .fileType(asset.getFileType())
+                    .originalName(asset.getOriginalName())
+                    .size(asset.getSize())
+                    .build());
+        }
+        return result;
     }
 
     private boolean canManage(Paper paper) {

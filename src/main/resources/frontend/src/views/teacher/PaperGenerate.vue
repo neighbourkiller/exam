@@ -331,6 +331,28 @@
                   {{ option.label }}. {{ option.value }}
                 </p>
               </div>
+              <div v-if="question.imageAssets.length" class="preview-image-list">
+                <el-image
+                  v-for="asset in question.imageAssets"
+                  :key="asset.assetId || asset.url"
+                  :src="asset.url"
+                  fit="contain"
+                  class="preview-image-item"
+                  :preview-src-list="question.imageAssets.map(item => item.url)"
+                />
+              </div>
+              <div v-if="question.otherAssets.length" class="preview-attachment-list">
+                <a
+                  v-for="asset in question.otherAssets"
+                  :key="asset.assetId || asset.url"
+                  :href="asset.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="preview-attachment-item"
+                >
+                  {{ asset.originalName || asset.url }}
+                </a>
+              </div>
             </section>
           </div>
         </div>
@@ -440,6 +462,7 @@ const previewQuestions = computed(() =>
     .slice()
     .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
     .map((question, index) => ({
+      ...splitQuestionAssets(question.assets),
       ...question,
       displayOrder: index + 1,
       typeLabel: questionTypeLabelMap[question.type] || question.type || '未知题型',
@@ -467,6 +490,25 @@ const parseQuestionOptions = (optionsJson) => {
       .filter(option => option.value)
   } catch (error) {
     return []
+  }
+}
+
+const splitQuestionAssets = (assets) => {
+  if (!Array.isArray(assets) || !assets.length) {
+    return { imageAssets: [], otherAssets: [] }
+  }
+  const normalized = assets
+    .filter(item => item && item.url)
+    .map(item => ({
+      assetId: item.assetId,
+      url: item.url,
+      fileType: (item.fileType || '').toUpperCase(),
+      originalName: item.originalName,
+      size: item.size
+    }))
+  return {
+    imageAssets: normalized.filter(item => item.fileType === 'IMAGE'),
+    otherAssets: normalized.filter(item => item.fileType !== 'IMAGE')
   }
 }
 
@@ -927,5 +969,38 @@ onMounted(async () => {
 .preview-option-item {
   margin: 4px 0;
   color: #606266;
+}
+
+.preview-image-list {
+  margin-top: 8px;
+  padding-left: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preview-image-item {
+  width: 150px;
+  height: 100px;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  background: #f5f7fa;
+}
+
+.preview-attachment-list {
+  margin-top: 8px;
+  padding-left: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preview-attachment-item {
+  color: #409eff;
+  text-decoration: none;
+}
+
+.preview-attachment-item:hover {
+  text-decoration: underline;
 }
 </style>

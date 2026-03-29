@@ -7,6 +7,7 @@ import com.ekusys.exam.exam.dto.SnapshotRequest;
 import com.ekusys.exam.exam.dto.StartExamResponse;
 import com.ekusys.exam.exam.dto.StudentExamView;
 import com.ekusys.exam.exam.dto.TeacherExamView;
+import com.ekusys.exam.exam.dto.TeachingClassOptionView;
 import com.ekusys.exam.exam.dto.SubmitExamRequest;
 import com.ekusys.exam.exam.dto.SubmitResultView;
 import com.ekusys.exam.exam.service.ExamService;
@@ -53,6 +54,12 @@ public class ExamController {
     @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
     public ApiResponse<List<TeacherExamView>> teacherExams() {
         return ApiResponse.ok(examService.listTeacherExams());
+    }
+
+    @GetMapping("/teaching-classes")
+    @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
+    public ApiResponse<List<TeachingClassOptionView>> teachingClasses() {
+        return ApiResponse.ok(examService.listTeachingClasses());
     }
 
     @PostMapping("/{examId}/start")

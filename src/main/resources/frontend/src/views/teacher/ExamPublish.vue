@@ -35,11 +35,31 @@
         <el-col :span="8"><el-form-item label="结束时间"><el-date-picker v-model="form.endTime" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item></el-col>
         <el-col :span="8"><el-form-item label="时长(分钟)"><el-input v-model.number="form.durationMinutes" /></el-form-item></el-col>
       </el-row>
-      <el-form-item label="目标班级ID">
-        <el-input v-model="classIdsText" placeholder="例如: 3001,3002" />
+      <el-form-item label="目标教学班">
+        <el-select
+          v-model="form.targetClassIds"
+          multiple
+          filterable
+          clearable
+          placeholder="请选择目标教学班"
+          style="width: 100%"
+        >
+          <el-option
+            v-for="item in teachingClassOptions"
+            :key="item.id"
+            :label="teachingClassLabel(item)"
+            :value="item.id"
+          >
+            <div class="paper-option-row">
+              <span class="paper-option-id">{{ item.id }}</span>
+              <span>{{ item.name }}（{{ item.subjectName || '未知课程' }}）</span>
+            </div>
+          </el-option>
+        </el-select>
       </el-form-item>
       <el-button type="primary" @click="createExam">创建考试</el-button>
       <el-button @click="loadPaperOptions">刷新试卷选项</el-button>
+      <el-button @click="loadTeachingClasses">刷新教学班选项</el-button>
     </el-form>
 
     <el-divider />
@@ -64,7 +84,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { createExamApi, publishExamApi, queryPapersApi, teacherExamsApi } from '../../api'
+import { createExamApi, examTeachingClassesApi, publishExamApi, queryPapersApi, teacherExamsApi } from '../../api'
 
 const now = new Date()
 const later = new Date(now.getTime() + 3600 * 1000)
@@ -75,14 +95,16 @@ const form = reactive({
   startTime: now.toISOString().slice(0, 19),
   endTime: later.toISOString().slice(0, 19),
   durationMinutes: 60,
-  passScore: 60
+  passScore: 60,
+  targetClassIds: []
 })
 
-const classIdsText = ref('3001')
 const exams = ref([])
 const paperOptions = ref([])
+const teachingClassOptions = ref([])
 
 const paperLabel = (paper) => `${paper.id} - ${paper.name}`
+const teachingClassLabel = (item) => `${item.id} - ${item.name || ''} (${item.subjectName || '未知课程'})`
 
 const loadPaperOptions = async () => {
   const data = await queryPapersApi({
@@ -94,16 +116,20 @@ const loadPaperOptions = async () => {
   paperOptions.value = data.records || []
 }
 
+const loadTeachingClasses = async () => {
+  teachingClassOptions.value = await examTeachingClassesApi()
+}
+
 const createExam = async () => {
   if (!form.paperId) {
     ElMessage.warning('请选择试卷')
     return
   }
-  const targetClassIds = classIdsText.value
-    .split(',')
-    .map((v) => v.trim())
-    .filter((v) => v)
-  const payload = { ...form, targetClassIds }
+  if (!form.targetClassIds.length) {
+    ElMessage.warning('请选择目标教学班')
+    return
+  }
+  const payload = { ...form }
   const id = await createExamApi(payload)
   ElMessage.success(`考试创建成功: ${id}`)
   await loadExams()
@@ -121,6 +147,7 @@ const loadExams = async () => {
 
 onMounted(async () => {
   await loadPaperOptions()
+  await loadTeachingClasses()
   await loadExams()
 })
 </script>

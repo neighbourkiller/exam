@@ -6,6 +6,7 @@ const MainLayout = () => import('../layout/MainLayout.vue')
 const TeacherQuestion = () => import('../views/teacher/QuestionManage.vue')
 const TeacherPaper = () => import('../views/teacher/PaperGenerate.vue')
 const TeacherExam = () => import('../views/teacher/ExamPublish.vue')
+const TeacherClass = () => import('../views/teacher/ClassManage.vue')
 const TeacherGrading = () => import('../views/teacher/GradingView.vue')
 const TeacherAnalytics = () => import('../views/teacher/AnalyticsView.vue')
 const StudentExamList = () => import('../views/student/ExamList.vue')
@@ -24,6 +25,7 @@ const routes = [
       { path: 'teacher/questions', component: TeacherQuestion, meta: { roles: ['TEACHER', 'ADMIN'] } },
       { path: 'teacher/papers', component: TeacherPaper, meta: { roles: ['TEACHER', 'ADMIN'] } },
       { path: 'teacher/exams', component: TeacherExam, meta: { roles: ['TEACHER', 'ADMIN'] } },
+      { path: 'teacher/classes', component: TeacherClass, meta: { roles: ['TEACHER', 'ADMIN'] } },
       { path: 'teacher/grading', component: TeacherGrading, meta: { roles: ['TEACHER', 'ADMIN'] } },
       { path: 'teacher/analytics', component: TeacherAnalytics, meta: { roles: ['TEACHER', 'ADMIN'] } },
       { path: 'student/exams', component: StudentExamList, meta: { roles: ['STUDENT'] } },

@@ -16,35 +16,44 @@ import com.ekusys.exam.exam.dto.SnapshotRequest;
 import com.ekusys.exam.exam.dto.StartExamResponse;
 import com.ekusys.exam.exam.dto.StudentExamQuestionView;
 import com.ekusys.exam.exam.dto.StudentExamView;
-import com.ekusys.exam.exam.dto.TeacherExamView;
+import com.ekusys.exam.exam.dto.TeachingClassOptionView;
 import com.ekusys.exam.exam.dto.SubmitExamRequest;
 import com.ekusys.exam.exam.dto.SubmitResultView;
+import com.ekusys.exam.exam.dto.TeacherExamView;
 import com.ekusys.exam.repository.entity.AntiCheatEvent;
-import com.ekusys.exam.repository.entity.ClassStudent;
 import com.ekusys.exam.repository.entity.Exam;
 import com.ekusys.exam.repository.entity.ExamSession;
 import com.ekusys.exam.repository.entity.ExamTargetClass;
 import com.ekusys.exam.repository.entity.Paper;
 import com.ekusys.exam.repository.entity.PaperQuestion;
 import com.ekusys.exam.repository.entity.Question;
+import com.ekusys.exam.repository.entity.StudentTeachingClass;
+import com.ekusys.exam.repository.entity.Subject;
 import com.ekusys.exam.repository.entity.Submission;
 import com.ekusys.exam.repository.entity.SubmissionAnswer;
+import com.ekusys.exam.repository.entity.TeachingClass;
+import com.ekusys.exam.repository.entity.User;
 import com.ekusys.exam.repository.mapper.AntiCheatEventMapper;
-import com.ekusys.exam.repository.mapper.ClassStudentMapper;
 import com.ekusys.exam.repository.mapper.ExamMapper;
 import com.ekusys.exam.repository.mapper.ExamSessionMapper;
 import com.ekusys.exam.repository.mapper.ExamTargetClassMapper;
 import com.ekusys.exam.repository.mapper.PaperMapper;
 import com.ekusys.exam.repository.mapper.PaperQuestionMapper;
 import com.ekusys.exam.repository.mapper.QuestionMapper;
+import com.ekusys.exam.repository.mapper.StudentTeachingClassMapper;
+import com.ekusys.exam.repository.mapper.SubjectMapper;
 import com.ekusys.exam.repository.mapper.SubmissionAnswerMapper;
 import com.ekusys.exam.repository.mapper.SubmissionMapper;
+import com.ekusys.exam.repository.mapper.TeachingClassMapper;
+import com.ekusys.exam.repository.mapper.UserMapper;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -54,10 +63,17 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ExamService {
 
+    private static final String ROLE_ADMIN = "ADMIN";
+    private static final String ROLE_TEACHER = "TEACHER";
+    private static final String ENROLL_STATUS_ACTIVE = "ACTIVE";
+
     private final ExamMapper examMapper;
     private final PaperMapper paperMapper;
     private final ExamTargetClassMapper examTargetClassMapper;
-    private final ClassStudentMapper classStudentMapper;
+    private final StudentTeachingClassMapper studentTeachingClassMapper;
+    private final TeachingClassMapper teachingClassMapper;
+    private final SubjectMapper subjectMapper;
+    private final UserMapper userMapper;
     private final ExamSessionMapper examSessionMapper;
     private final SubmissionMapper submissionMapper;
     private final SubmissionAnswerMapper submissionAnswerMapper;
@@ -70,7 +86,10 @@ public class ExamService {
     public ExamService(ExamMapper examMapper,
                        PaperMapper paperMapper,
                        ExamTargetClassMapper examTargetClassMapper,
-                       ClassStudentMapper classStudentMapper,
+                       StudentTeachingClassMapper studentTeachingClassMapper,
+                       TeachingClassMapper teachingClassMapper,
+                       SubjectMapper subjectMapper,
+                       UserMapper userMapper,
                        ExamSessionMapper examSessionMapper,
                        SubmissionMapper submissionMapper,
                        SubmissionAnswerMapper submissionAnswerMapper,
@@ -82,7 +101,10 @@ public class ExamService {
         this.examMapper = examMapper;
         this.paperMapper = paperMapper;
         this.examTargetClassMapper = examTargetClassMapper;
-        this.classStudentMapper = classStudentMapper;
+        this.studentTeachingClassMapper = studentTeachingClassMapper;
+        this.teachingClassMapper = teachingClassMapper;
+        this.subjectMapper = subjectMapper;
+        this.userMapper = userMapper;
         this.examSessionMapper = examSessionMapper;
         this.submissionMapper = submissionMapper;
         this.submissionAnswerMapper = submissionAnswerMapper;
@@ -99,6 +121,42 @@ public class ExamService {
         if (paper == null) {
             throw new BusinessException("试卷不存在");
         }
+        Long paperSubjectId = paper.getSubjectId();
+        if (paperSubjectId == null) {
+            throw new BusinessException("试卷未绑定课程，无法发布考试");
+        }
+
+        Set<Long> targetClassIds = request.getTargetClassIds().stream()
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (targetClassIds.isEmpty()) {
+            throw new BusinessException("目标教学班不能为空");
+        }
+
+        List<TeachingClass> teachingClasses = teachingClassMapper.selectBatchIds(targetClassIds);
+        if (teachingClasses.size() != targetClassIds.size()) {
+            throw new BusinessException("存在无效教学班ID");
+        }
+        Map<Long, TeachingClass> teachingClassMap = teachingClasses.stream()
+            .collect(Collectors.toMap(TeachingClass::getId, tc -> tc, (a, b) -> a));
+
+        Long publisherId = SecurityUtils.getCurrentUserId();
+        Set<String> publisherRoleCodes = new HashSet<>(userMapper.selectRoleCodes(publisherId));
+        for (Long classId : targetClassIds) {
+            TeachingClass teachingClass = teachingClassMap.get(classId);
+            if (teachingClass == null) {
+                throw new BusinessException("存在无效教学班ID");
+            }
+            if (!Objects.equals(paperSubjectId, teachingClass.getSubjectId())) {
+                throw new BusinessException("目标教学班课程与试卷课程不一致");
+            }
+            validateTeachingClassTeacher(teachingClass);
+            if (!publisherRoleCodes.contains(ROLE_ADMIN)
+                && publisherRoleCodes.contains(ROLE_TEACHER)
+                && !Objects.equals(publisherId, teachingClass.getTeacherId())) {
+                throw new BusinessException("仅可为自己授课的教学班发布考试");
+            }
+        }
 
         Exam exam = new Exam();
         exam.setName(request.getName());
@@ -111,7 +169,7 @@ public class ExamService {
         exam.setPublisherId(SecurityUtils.getCurrentUserId());
         examMapper.insert(exam);
 
-        for (Long classId : request.getTargetClassIds()) {
+        for (Long classId : targetClassIds) {
             ExamTargetClass target = new ExamTargetClass();
             target.setExamId(exam.getId());
             target.setClassId(classId);
@@ -129,9 +187,7 @@ public class ExamService {
 
     public List<StudentExamView> listStudentExams() {
         Long studentId = SecurityUtils.getCurrentUserId();
-        List<Long> classIds = classStudentMapper.selectList(
-            new LambdaQueryWrapper<ClassStudent>().eq(ClassStudent::getStudentId, studentId)
-        ).stream().map(ClassStudent::getClassId).toList();
+        List<Long> classIds = listActiveTeachingClassIdsByStudent(studentId);
         if (classIds.isEmpty()) {
             return List.of();
         }
@@ -177,6 +233,54 @@ public class ExamService {
             .passScore(exam.getPassScore())
             .status(exam.getStatus())
             .build()).toList();
+    }
+
+    public List<TeachingClassOptionView> listTeachingClasses() {
+        Long userId = SecurityUtils.getCurrentUserId();
+        Set<String> roleCodes = new HashSet<>(userMapper.selectRoleCodes(userId));
+
+        LambdaQueryWrapper<TeachingClass> wrapper = new LambdaQueryWrapper<TeachingClass>()
+            .orderByAsc(TeachingClass::getSubjectId, TeachingClass::getTerm, TeachingClass::getName, TeachingClass::getId);
+        if (!roleCodes.contains(ROLE_ADMIN)) {
+            wrapper.eq(TeachingClass::getTeacherId, userId);
+        }
+        List<TeachingClass> classes = teachingClassMapper.selectList(wrapper);
+        if (classes.isEmpty()) {
+            return List.of();
+        }
+
+        Set<Long> subjectIds = classes.stream()
+            .map(TeachingClass::getSubjectId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        Map<Long, Subject> subjectMap = subjectIds.isEmpty()
+            ? Map.of()
+            : subjectMapper.selectBatchIds(subjectIds).stream()
+                .collect(Collectors.toMap(Subject::getId, s -> s, (a, b) -> a));
+
+        Set<Long> teacherIds = classes.stream()
+            .map(TeachingClass::getTeacherId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        Map<Long, User> teacherMap = teacherIds.isEmpty()
+            ? Map.of()
+            : userMapper.selectBatchIds(teacherIds).stream()
+                .collect(Collectors.toMap(User::getId, u -> u, (a, b) -> a));
+
+        return classes.stream().map(tc -> {
+            Subject subject = subjectMap.get(tc.getSubjectId());
+            User teacher = teacherMap.get(tc.getTeacherId());
+            return TeachingClassOptionView.builder()
+                .id(tc.getId())
+                .name(tc.getName())
+                .subjectId(tc.getSubjectId())
+                .subjectName(subject == null ? null : subject.getName())
+                .teacherId(tc.getTeacherId())
+                .teacherName(teacher == null ? null : teacher.getRealName())
+                .term(tc.getTerm())
+                .status(tc.getStatus())
+                .build();
+        }).toList();
     }
 
     @Transactional
@@ -495,17 +599,38 @@ public class ExamService {
     }
 
     private void checkStudentAccess(Long examId, Long studentId) {
-        List<Long> classIds = classStudentMapper.selectList(
-            new LambdaQueryWrapper<ClassStudent>().eq(ClassStudent::getStudentId, studentId)
-        ).stream().map(ClassStudent::getClassId).toList();
+        List<Long> classIds = listActiveTeachingClassIdsByStudent(studentId);
         if (classIds.isEmpty()) {
-            throw new BusinessException("未关联班级");
+            throw new BusinessException("未关联教学班");
         }
         long count = examTargetClassMapper.selectCount(new LambdaQueryWrapper<ExamTargetClass>()
             .eq(ExamTargetClass::getExamId, examId)
             .in(ExamTargetClass::getClassId, classIds));
         if (count == 0) {
             throw new BusinessException("无考试访问权限");
+        }
+    }
+
+    private List<Long> listActiveTeachingClassIdsByStudent(Long studentId) {
+        return studentTeachingClassMapper.selectList(
+            new LambdaQueryWrapper<StudentTeachingClass>()
+                .eq(StudentTeachingClass::getStudentId, studentId)
+                .eq(StudentTeachingClass::getEnrollStatus, ENROLL_STATUS_ACTIVE)
+        ).stream().map(StudentTeachingClass::getTeachingClassId).toList();
+    }
+
+    private void validateTeachingClassTeacher(TeachingClass teachingClass) {
+        Long teacherId = teachingClass.getTeacherId();
+        if (teacherId == null) {
+            throw new BusinessException("教学班未配置任课老师");
+        }
+        User teacher = userMapper.selectById(teacherId);
+        if (teacher == null) {
+            throw new BusinessException("教学班任课老师不存在");
+        }
+        Set<String> roleCodes = new HashSet<>(userMapper.selectRoleCodes(teacherId));
+        if (!roleCodes.contains(ROLE_TEACHER)) {
+            throw new BusinessException("教学班任课老师角色非法");
         }
     }
 

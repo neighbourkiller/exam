@@ -1,6 +1,7 @@
 package com.ekusys.exam.admin.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import java.util.List;
 import lombok.Data;
 
 @Data
@@ -10,6 +11,7 @@ public class UserUpdateRequest {
     private String realName;
 
     private Boolean enabled;
+    private String studentNo;
 
-    private Long classId;
+    private List<Long> teachingClassIds;
 }

@@ -8,6 +8,7 @@
           <el-menu-item index="/teacher/questions">题库管理</el-menu-item>
           <el-menu-item index="/teacher/papers">组卷管理</el-menu-item>
           <el-menu-item index="/teacher/exams">考试发布</el-menu-item>
+          <el-menu-item index="/teacher/classes">班级管理</el-menu-item>
           <el-menu-item index="/teacher/grading">主观阅卷</el-menu-item>
           <el-menu-item index="/teacher/analytics">数据看板</el-menu-item>
         </el-sub-menu>

@@ -1,5 +1,6 @@
 package com.ekusys.exam.paper.dto;
 
+import java.util.List;
 import lombok.Builder;
 import lombok.Data;
 
@@ -15,4 +16,5 @@ public class PaperQuestionView {
     private String answer;
     private Integer score;
     private Integer sortOrder;
+    private List<PaperQuestionAssetView> assets;
 }

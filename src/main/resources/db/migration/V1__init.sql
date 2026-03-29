@@ -1,4 +1,4 @@
-﻿CREATE TABLE IF NOT EXISTS sys_user (
+CREATE TABLE IF NOT EXISTS sys_user (
     id BIGINT PRIMARY KEY,
     username VARCHAR(64) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
@@ -31,27 +31,6 @@ CREATE TABLE IF NOT EXISTS sys_user_role (
     UNIQUE KEY uk_user_role (user_id, role_id)
 );
 
-CREATE TABLE IF NOT EXISTS class_room (
-    id BIGINT PRIMARY KEY,
-    name VARCHAR(64) NOT NULL,
-    grade VARCHAR(32),
-    create_time DATETIME,
-    update_time DATETIME,
-    create_by BIGINT,
-    update_by BIGINT
-);
-
-CREATE TABLE IF NOT EXISTS class_student (
-    id BIGINT PRIMARY KEY,
-    class_id BIGINT NOT NULL,
-    student_id BIGINT NOT NULL,
-    create_time DATETIME,
-    update_time DATETIME,
-    create_by BIGINT,
-    update_by BIGINT,
-    UNIQUE KEY uk_class_student (class_id, student_id)
-);
-
 CREATE TABLE IF NOT EXISTS subject (
     id BIGINT PRIMARY KEY,
     name VARCHAR(64) NOT NULL,
@@ -60,6 +39,65 @@ CREATE TABLE IF NOT EXISTS subject (
     update_time DATETIME,
     create_by BIGINT,
     update_by BIGINT
+);
+
+CREATE TABLE IF NOT EXISTS student_profile (
+    id BIGINT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    student_no VARCHAR(64),
+    enrollment_year VARCHAR(16),
+    status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+    create_time DATETIME,
+    update_time DATETIME,
+    create_by BIGINT,
+    update_by BIGINT,
+    UNIQUE KEY uk_student_profile_user (user_id)
+);
+
+CREATE TABLE IF NOT EXISTS teacher_profile (
+    id BIGINT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    teacher_no VARCHAR(64),
+    title VARCHAR(32),
+    status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+    create_time DATETIME,
+    update_time DATETIME,
+    create_by BIGINT,
+    update_by BIGINT,
+    UNIQUE KEY uk_teacher_profile_user (user_id)
+);
+
+CREATE TABLE IF NOT EXISTS teaching_class (
+    id BIGINT PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    subject_id BIGINT NOT NULL,
+    teacher_id BIGINT NOT NULL,
+    term VARCHAR(32) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'ONGOING',
+    capacity INT,
+    create_time DATETIME,
+    update_time DATETIME,
+    create_by BIGINT,
+    update_by BIGINT,
+    KEY idx_teaching_class_subject_teacher (subject_id, teacher_id),
+    KEY idx_teaching_class_term_status (term, status)
+);
+
+CREATE TABLE IF NOT EXISTS student_teaching_class (
+    id BIGINT PRIMARY KEY,
+    student_id BIGINT NOT NULL,
+    subject_id BIGINT NOT NULL,
+    teaching_class_id BIGINT NOT NULL,
+    enroll_status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+    enrolled_at DATETIME,
+    dropped_at DATETIME,
+    create_time DATETIME,
+    update_time DATETIME,
+    create_by BIGINT,
+    update_by BIGINT,
+    UNIQUE KEY uk_student_subject (student_id, subject_id),
+    UNIQUE KEY uk_student_teaching_class (student_id, teaching_class_id),
+    KEY idx_stc_teaching_class_status (teaching_class_id, enroll_status)
 );
 
 CREATE TABLE IF NOT EXISTS question (
@@ -79,6 +117,24 @@ CREATE TABLE IF NOT EXISTS question (
     update_by BIGINT
 );
 
+CREATE TABLE IF NOT EXISTS question_asset (
+    id BIGINT PRIMARY KEY,
+    question_id BIGINT,
+    uploader_id BIGINT NOT NULL,
+    file_type VARCHAR(16) NOT NULL,
+    url VARCHAR(512) NOT NULL,
+    object_key VARCHAR(255) NOT NULL,
+    original_name VARCHAR(255),
+    content_type VARCHAR(128),
+    size BIGINT,
+    create_time DATETIME,
+    update_time DATETIME,
+    create_by BIGINT,
+    update_by BIGINT,
+    KEY idx_question_asset_question (question_id),
+    KEY idx_question_asset_uploader (uploader_id)
+);
+
 CREATE TABLE IF NOT EXISTS paper (
     id BIGINT PRIMARY KEY,
     name VARCHAR(128) NOT NULL,
@@ -89,7 +145,8 @@ CREATE TABLE IF NOT EXISTS paper (
     create_time DATETIME,
     update_time DATETIME,
     create_by BIGINT,
-    update_by BIGINT
+    update_by BIGINT,
+    KEY idx_paper_teacher_subject (teacher_id, subject_id)
 );
 
 CREATE TABLE IF NOT EXISTS paper_question (
@@ -102,7 +159,8 @@ CREATE TABLE IF NOT EXISTS paper_question (
     update_time DATETIME,
     create_by BIGINT,
     update_by BIGINT,
-    UNIQUE KEY uk_paper_question (paper_id, question_id)
+    UNIQUE KEY uk_paper_question (paper_id, question_id),
+    KEY idx_paper_question_paper_sort (paper_id, sort_order)
 );
 
 CREATE TABLE IF NOT EXISTS exam (

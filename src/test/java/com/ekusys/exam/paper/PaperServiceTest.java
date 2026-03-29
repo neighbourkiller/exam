@@ -20,15 +20,19 @@ import com.ekusys.exam.paper.dto.AutoGeneratePaperRequest;
 import com.ekusys.exam.paper.dto.AutoGenerateRule;
 import com.ekusys.exam.paper.dto.ManualCreatePaperRequest;
 import com.ekusys.exam.paper.dto.ManualPaperQuestion;
+import com.ekusys.exam.paper.dto.PaperDetailView;
 import com.ekusys.exam.paper.dto.PaperQueryRequest;
 import com.ekusys.exam.paper.dto.PaperUpdateRequest;
 import com.ekusys.exam.paper.service.PaperService;
 import com.ekusys.exam.repository.entity.Paper;
+import com.ekusys.exam.repository.entity.PaperQuestion;
 import com.ekusys.exam.repository.entity.Question;
+import com.ekusys.exam.repository.entity.QuestionAsset;
 import com.ekusys.exam.repository.entity.Subject;
 import com.ekusys.exam.repository.mapper.ExamMapper;
 import com.ekusys.exam.repository.mapper.PaperMapper;
 import com.ekusys.exam.repository.mapper.PaperQuestionMapper;
+import com.ekusys.exam.repository.mapper.QuestionAssetMapper;
 import com.ekusys.exam.repository.mapper.QuestionMapper;
 import com.ekusys.exam.repository.mapper.SubjectMapper;
 import java.util.List;
@@ -56,6 +60,9 @@ class PaperServiceTest {
     private QuestionMapper questionMapper;
 
     @Mock
+    private QuestionAssetMapper questionAssetMapper;
+
+    @Mock
     private SubjectMapper subjectMapper;
 
     @Mock
@@ -65,7 +72,14 @@ class PaperServiceTest {
 
     @BeforeEach
     void setUp() {
-        paperService = new PaperService(paperMapper, paperQuestionMapper, questionMapper, subjectMapper, examMapper);
+        paperService = new PaperService(
+            paperMapper,
+            paperQuestionMapper,
+            questionMapper,
+            questionAssetMapper,
+            subjectMapper,
+            examMapper
+        );
 
         LoginUser admin = LoginUser.builder()
             .userId(1001L)
@@ -227,6 +241,41 @@ class PaperServiceTest {
         request.setName(null);
 
         assertDoesNotThrow(() -> paperService.query(request));
+    }
+
+    @Test
+    void getDetailShouldIncludeQuestionAssets() {
+        Paper paper = new Paper();
+        paper.setId(9001L);
+        paper.setName("试卷A");
+        paper.setSubjectId(5001L);
+        paper.setTeacherId(1002L);
+        when(paperMapper.selectById(9001L)).thenReturn(paper);
+        when(subjectMapper.selectById(5001L)).thenReturn(buildSubject(5001L, "Java"));
+
+        PaperQuestion link = new PaperQuestion();
+        link.setPaperId(9001L);
+        link.setQuestionId(11L);
+        link.setScore(5);
+        link.setSortOrder(1);
+        when(paperQuestionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(link));
+
+        Question question = buildQuestion(11L, 5001L);
+        question.setOptionsJson("[{\"label\":\"A\",\"value\":\"X\"}]");
+        when(questionMapper.selectBatchIds(any())).thenReturn(List.of(question));
+
+        QuestionAsset asset = new QuestionAsset();
+        asset.setId(7001L);
+        asset.setQuestionId(11L);
+        asset.setUrl("http://example.com/a.png");
+        asset.setFileType("IMAGE");
+        when(questionAssetMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(asset));
+
+        PaperDetailView detail = paperService.getDetail(9001L);
+        assertEquals(1, detail.getQuestions().size());
+        assertEquals(1, detail.getQuestions().get(0).getAssets().size());
+        assertEquals("7001", detail.getQuestions().get(0).getAssets().get(0).getAssetId());
+        assertEquals("http://example.com/a.png", detail.getQuestions().get(0).getAssets().get(0).getUrl());
     }
 
     private Question buildQuestion(Long id, Long subjectId) {
