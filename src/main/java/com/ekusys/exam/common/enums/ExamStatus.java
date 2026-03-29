@@ -4,5 +4,6 @@ public enum ExamStatus {
     DRAFT,
     PUBLISHED,
     ONGOING,
-    FINISHED
+    FINISHED,
+    TERMINATED
 }

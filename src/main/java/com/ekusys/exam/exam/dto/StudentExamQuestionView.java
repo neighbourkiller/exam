@@ -1,5 +1,7 @@
 package com.ekusys.exam.exam.dto;
 
+import com.ekusys.exam.question.dto.QuestionImageUploadView;
+import java.util.List;
 import lombok.Builder;
 import lombok.Data;
 
@@ -14,4 +16,5 @@ public class StudentExamQuestionView {
     private Integer score;
     private Integer sortOrder;
     private String currentAnswer;
+    private List<QuestionImageUploadView> assets;
 }

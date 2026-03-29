@@ -15,11 +15,13 @@ import com.ekusys.exam.exam.dto.ExamCreateRequest;
 import com.ekusys.exam.exam.dto.SnapshotRequest;
 import com.ekusys.exam.exam.dto.StartExamResponse;
 import com.ekusys.exam.exam.dto.StudentExamQuestionView;
+import com.ekusys.exam.exam.dto.StudentExamResultView;
 import com.ekusys.exam.exam.dto.StudentExamView;
 import com.ekusys.exam.exam.dto.TeachingClassOptionView;
 import com.ekusys.exam.exam.dto.SubmitExamRequest;
 import com.ekusys.exam.exam.dto.SubmitResultView;
 import com.ekusys.exam.exam.dto.TeacherExamView;
+import com.ekusys.exam.question.dto.QuestionImageUploadView;
 import com.ekusys.exam.repository.entity.AntiCheatEvent;
 import com.ekusys.exam.repository.entity.Exam;
 import com.ekusys.exam.repository.entity.ExamSession;
@@ -27,6 +29,7 @@ import com.ekusys.exam.repository.entity.ExamTargetClass;
 import com.ekusys.exam.repository.entity.Paper;
 import com.ekusys.exam.repository.entity.PaperQuestion;
 import com.ekusys.exam.repository.entity.Question;
+import com.ekusys.exam.repository.entity.QuestionAsset;
 import com.ekusys.exam.repository.entity.StudentTeachingClass;
 import com.ekusys.exam.repository.entity.Subject;
 import com.ekusys.exam.repository.entity.Submission;
@@ -39,6 +42,7 @@ import com.ekusys.exam.repository.mapper.ExamSessionMapper;
 import com.ekusys.exam.repository.mapper.ExamTargetClassMapper;
 import com.ekusys.exam.repository.mapper.PaperMapper;
 import com.ekusys.exam.repository.mapper.PaperQuestionMapper;
+import com.ekusys.exam.repository.mapper.QuestionAssetMapper;
 import com.ekusys.exam.repository.mapper.QuestionMapper;
 import com.ekusys.exam.repository.mapper.StudentTeachingClassMapper;
 import com.ekusys.exam.repository.mapper.SubjectMapper;
@@ -79,6 +83,7 @@ public class ExamService {
     private final SubmissionAnswerMapper submissionAnswerMapper;
     private final PaperQuestionMapper paperQuestionMapper;
     private final QuestionMapper questionMapper;
+    private final QuestionAssetMapper questionAssetMapper;
     private final AntiCheatEventMapper antiCheatEventMapper;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
@@ -95,6 +100,7 @@ public class ExamService {
                        SubmissionAnswerMapper submissionAnswerMapper,
                        PaperQuestionMapper paperQuestionMapper,
                        QuestionMapper questionMapper,
+                       QuestionAssetMapper questionAssetMapper,
                        AntiCheatEventMapper antiCheatEventMapper,
                        StringRedisTemplate redisTemplate,
                        ObjectMapper objectMapper) {
@@ -110,6 +116,7 @@ public class ExamService {
         this.submissionAnswerMapper = submissionAnswerMapper;
         this.paperQuestionMapper = paperQuestionMapper;
         this.questionMapper = questionMapper;
+        this.questionAssetMapper = questionAssetMapper;
         this.antiCheatEventMapper = antiCheatEventMapper;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
@@ -181,7 +188,26 @@ public class ExamService {
     @Transactional
     public void publishExam(Long examId) {
         Exam exam = ensureExam(examId);
+        ensureExamManagePermission(exam);
+        if (ExamStatus.TERMINATED.name().equals(exam.getStatus())) {
+            throw new BusinessException("考试已终止，不能再次发布");
+        }
+        if (ExamStatus.FINISHED.name().equals(exam.getStatus())) {
+            throw new BusinessException("考试已结束，不能再次发布");
+        }
         exam.setStatus(ExamStatus.PUBLISHED.name());
+        examMapper.updateById(exam);
+    }
+
+    @Transactional
+    public void terminateExam(Long examId) {
+        Exam exam = ensureExam(examId);
+        ensureExamManagePermission(exam);
+        if (ExamStatus.TERMINATED.name().equals(exam.getStatus())) {
+            return;
+        }
+        exam.setEndTime(LocalDateTime.now());
+        exam.setStatus(ExamStatus.TERMINATED.name());
         examMapper.updateById(exam);
     }
 
@@ -208,11 +234,17 @@ public class ExamService {
             .map(Submission::getExamId)
             .collect(Collectors.toSet());
 
-        return examMapper.selectBatchIds(examIds).stream()
+        List<Exam> exams = examMapper.selectBatchIds(examIds);
+        LocalDateTime now = LocalDateTime.now();
+        exams.forEach(exam -> refreshExamStatusByTime(exam, now));
+        Map<Long, String> examSubjectNameMap = buildExamSubjectNameMap(exams);
+
+        return exams.stream()
             .sorted((a, b) -> b.getStartTime().compareTo(a.getStartTime()))
             .map(exam -> StudentExamView.builder()
                 .examId(exam.getId())
                 .name(exam.getName())
+                .subjectName(examSubjectNameMap.get(exam.getId()))
                 .startTime(exam.getStartTime())
                 .endTime(exam.getEndTime())
                 .durationMinutes(exam.getDurationMinutes())
@@ -224,6 +256,8 @@ public class ExamService {
 
     public List<TeacherExamView> listTeacherExams() {
         List<Exam> exams = examMapper.selectList(new LambdaQueryWrapper<Exam>().orderByDesc(Exam::getCreateTime));
+        LocalDateTime now = LocalDateTime.now();
+        exams.forEach(exam -> refreshExamStatusByTime(exam, now));
         return exams.stream().map(exam -> TeacherExamView.builder()
             .examId(exam.getId())
             .name(exam.getName())
@@ -233,6 +267,62 @@ public class ExamService {
             .passScore(exam.getPassScore())
             .status(exam.getStatus())
             .build()).toList();
+    }
+
+    public List<StudentExamResultView> listStudentExamResults() {
+        Long studentId = SecurityUtils.getCurrentUserId();
+        List<Long> classIds = listActiveTeachingClassIdsByStudent(studentId);
+        if (classIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<ExamTargetClass> targets = examTargetClassMapper.selectList(
+            new LambdaQueryWrapper<ExamTargetClass>().in(ExamTargetClass::getClassId, classIds)
+        );
+        Set<Long> examIds = targets.stream().map(ExamTargetClass::getExamId).collect(Collectors.toSet());
+        if (examIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<Exam> exams = examMapper.selectBatchIds(examIds);
+        LocalDateTime now = LocalDateTime.now();
+        exams.forEach(exam -> refreshExamStatusByTime(exam, now));
+        Map<Long, String> examSubjectNameMap = buildExamSubjectNameMap(exams);
+
+        Map<Long, Submission> latestSubmissionByExamId = submissionMapper.selectList(
+            new LambdaQueryWrapper<Submission>()
+                .eq(Submission::getStudentId, studentId)
+                .in(Submission::getExamId, examIds)
+                .orderByDesc(Submission::getSubmittedAt, Submission::getUpdateTime, Submission::getId)
+        ).stream().collect(Collectors.toMap(
+            Submission::getExamId,
+            submission -> submission,
+            this::pickLatestSubmission
+        ));
+
+        return exams.stream()
+            .sorted((a, b) -> b.getStartTime().compareTo(a.getStartTime()))
+            .map(exam -> {
+                Submission submission = latestSubmissionByExamId.get(exam.getId());
+                boolean submitted = submission != null && !SubmissionStatus.IN_PROGRESS.name().equals(submission.getStatus());
+                return StudentExamResultView.builder()
+                    .examId(exam.getId())
+                    .name(exam.getName())
+                    .subjectName(examSubjectNameMap.get(exam.getId()))
+                    .startTime(exam.getStartTime())
+                    .endTime(exam.getEndTime())
+                    .durationMinutes(exam.getDurationMinutes())
+                    .examStatus(exam.getStatus())
+                    .submissionId(submission == null ? null : submission.getId())
+                    .submissionStatus(submission == null ? null : submission.getStatus())
+                    .objectiveScore(submission == null ? null : submission.getObjectiveScore())
+                    .subjectiveScore(submission == null ? null : submission.getSubjectiveScore())
+                    .totalScore(submission == null ? null : submission.getTotalScore())
+                    .passFlag(submission == null ? null : submission.getPassFlag())
+                    .submittedAt(submission == null ? null : submission.getSubmittedAt())
+                    .submitted(submitted)
+                    .build();
+            }).toList();
     }
 
     public List<TeachingClassOptionView> listTeachingClasses() {
@@ -290,6 +380,7 @@ public class ExamService {
         checkStudentAccess(examId, studentId);
 
         LocalDateTime now = LocalDateTime.now();
+        refreshExamStatusByTime(exam, now);
         if (now.isBefore(exam.getStartTime())) {
             throw new BusinessException("考试尚未开始");
         }
@@ -299,9 +390,11 @@ public class ExamService {
         if (ExamStatus.DRAFT.name().equals(exam.getStatus())) {
             throw new BusinessException("考试未发布");
         }
-        if (ExamStatus.PUBLISHED.name().equals(exam.getStatus())) {
-            exam.setStatus(ExamStatus.ONGOING.name());
-            examMapper.updateById(exam);
+        if (ExamStatus.TERMINATED.name().equals(exam.getStatus())) {
+            throw new BusinessException("考试已终止");
+        }
+        if (ExamStatus.FINISHED.name().equals(exam.getStatus())) {
+            throw new BusinessException("考试已结束");
         }
 
         ExamSession session = examSessionMapper.selectOne(new LambdaQueryWrapper<ExamSession>()
@@ -345,6 +438,7 @@ public class ExamService {
         List<Long> qIds = paperQuestions.stream().map(PaperQuestion::getQuestionId).toList();
         Map<Long, Question> questionMap = questionMapper.selectBatchIds(qIds).stream()
             .collect(Collectors.toMap(Question::getId, q -> q));
+        Map<Long, List<QuestionImageUploadView>> questionAssetMap = listQuestionAssets(qIds);
 
         Map<Long, String> snapshotAnswers = loadSnapshotAnswerMap(examId, studentId);
         List<StudentExamQuestionView> questions = paperQuestions.stream().map(link -> {
@@ -357,6 +451,7 @@ public class ExamService {
                 .score(link.getScore())
                 .sortOrder(link.getSortOrder())
                 .currentAnswer(snapshotAnswers.get(link.getQuestionId()))
+                .assets(questionAssetMap.getOrDefault(link.getQuestionId(), List.of()))
                 .build();
         }).toList();
 
@@ -532,6 +627,33 @@ public class ExamService {
         }
     }
 
+    private Map<Long, List<QuestionImageUploadView>> listQuestionAssets(List<Long> questionIds) {
+        List<Long> targetQuestionIds = questionIds.stream()
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
+        if (targetQuestionIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return questionAssetMapper.selectList(
+            new LambdaQueryWrapper<QuestionAsset>()
+                .in(QuestionAsset::getQuestionId, targetQuestionIds)
+                .orderByAsc(QuestionAsset::getQuestionId)
+                .orderByAsc(QuestionAsset::getId)
+        ).stream().collect(Collectors.groupingBy(
+            QuestionAsset::getQuestionId,
+            Collectors.mapping(asset -> QuestionImageUploadView.builder()
+                .assetId(String.valueOf(asset.getId()))
+                .url(asset.getUrl())
+                .objectKey(asset.getObjectKey())
+                .originalName(asset.getOriginalName())
+                .size(asset.getSize())
+                .fileType(asset.getFileType())
+                .build(), Collectors.toList())
+        ));
+    }
+
     public void flushAllSnapshotsToDatabase() {
         Set<String> keys = redisTemplate.keys("exam:snapshot:*");
         if (keys == null || keys.isEmpty()) {
@@ -636,5 +758,103 @@ public class ExamService {
 
     private String snapshotKey(Long examId, Long studentId) {
         return "exam:snapshot:" + examId + ":" + studentId;
+    }
+
+    private void refreshExamStatusByTime(Exam exam, LocalDateTime now) {
+        if (exam == null || now == null || exam.getStartTime() == null || exam.getEndTime() == null) {
+            return;
+        }
+        String currentStatus = exam.getStatus();
+        if (currentStatus == null) {
+            return;
+        }
+        if (ExamStatus.DRAFT.name().equals(currentStatus)
+            || ExamStatus.TERMINATED.name().equals(currentStatus)
+            || ExamStatus.FINISHED.name().equals(currentStatus)) {
+            return;
+        }
+
+        String nextStatus = currentStatus;
+        if (!now.isBefore(exam.getEndTime())) {
+            nextStatus = ExamStatus.FINISHED.name();
+        } else if (!now.isBefore(exam.getStartTime())) {
+            nextStatus = ExamStatus.ONGOING.name();
+        } else {
+            nextStatus = ExamStatus.PUBLISHED.name();
+        }
+
+        if (!Objects.equals(currentStatus, nextStatus)) {
+            exam.setStatus(nextStatus);
+            examMapper.updateById(exam);
+        }
+    }
+
+    private void ensureExamManagePermission(Exam exam) {
+        Long currentUserId = SecurityUtils.getCurrentUserId();
+        Set<String> roleCodes = new HashSet<>(userMapper.selectRoleCodes(currentUserId));
+        if (roleCodes.contains(ROLE_ADMIN)) {
+            return;
+        }
+        if (roleCodes.contains(ROLE_TEACHER) && Objects.equals(exam.getPublisherId(), currentUserId)) {
+            return;
+        }
+        throw new BusinessException("无权限操作该考试");
+    }
+
+    private Map<Long, String> buildExamSubjectNameMap(List<Exam> exams) {
+        if (exams == null || exams.isEmpty()) {
+            return Map.of();
+        }
+        Set<Long> paperIds = exams.stream()
+            .map(Exam::getPaperId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        if (paperIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, Paper> paperMap = paperMapper.selectBatchIds(paperIds).stream()
+            .collect(Collectors.toMap(Paper::getId, paper -> paper, (a, b) -> a));
+        Set<Long> subjectIds = paperMap.values().stream()
+            .map(Paper::getSubjectId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        Map<Long, Subject> subjectMap = subjectIds.isEmpty()
+            ? Map.of()
+            : subjectMapper.selectBatchIds(subjectIds).stream()
+                .collect(Collectors.toMap(Subject::getId, subject -> subject, (a, b) -> a));
+
+        Map<Long, String> examSubjectNameMap = new HashMap<>();
+        for (Exam exam : exams) {
+            Paper paper = paperMap.get(exam.getPaperId());
+            if (paper == null) {
+                examSubjectNameMap.put(exam.getId(), null);
+                continue;
+            }
+            Subject subject = subjectMap.get(paper.getSubjectId());
+            examSubjectNameMap.put(exam.getId(), subject == null ? null : subject.getName());
+        }
+        return examSubjectNameMap;
+    }
+
+    private Submission pickLatestSubmission(Submission left, Submission right) {
+        if (left == null) {
+            return right;
+        }
+        if (right == null) {
+            return left;
+        }
+        LocalDateTime leftTime = left.getSubmittedAt() != null ? left.getSubmittedAt() : left.getUpdateTime();
+        LocalDateTime rightTime = right.getSubmittedAt() != null ? right.getSubmittedAt() : right.getUpdateTime();
+        if (leftTime == null && rightTime == null) {
+            return Objects.compare(left.getId(), right.getId(), Long::compareTo) >= 0 ? left : right;
+        }
+        if (leftTime == null) {
+            return right;
+        }
+        if (rightTime == null) {
+            return left;
+        }
+        return leftTime.isAfter(rightTime) ? left : right;
     }
 }

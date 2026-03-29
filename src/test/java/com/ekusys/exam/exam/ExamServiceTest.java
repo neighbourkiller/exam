@@ -1,0 +1,173 @@
+package com.ekusys.exam.exam;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ekusys.exam.common.security.SecurityUtils;
+import com.ekusys.exam.exam.dto.StartExamResponse;
+import com.ekusys.exam.exam.service.ExamService;
+import com.ekusys.exam.repository.entity.Exam;
+import com.ekusys.exam.repository.entity.PaperQuestion;
+import com.ekusys.exam.repository.entity.Question;
+import com.ekusys.exam.repository.entity.QuestionAsset;
+import com.ekusys.exam.repository.entity.StudentTeachingClass;
+import com.ekusys.exam.repository.mapper.AntiCheatEventMapper;
+import com.ekusys.exam.repository.mapper.ExamMapper;
+import com.ekusys.exam.repository.mapper.ExamSessionMapper;
+import com.ekusys.exam.repository.mapper.ExamTargetClassMapper;
+import com.ekusys.exam.repository.mapper.PaperMapper;
+import com.ekusys.exam.repository.mapper.PaperQuestionMapper;
+import com.ekusys.exam.repository.mapper.QuestionAssetMapper;
+import com.ekusys.exam.repository.mapper.QuestionMapper;
+import com.ekusys.exam.repository.mapper.StudentTeachingClassMapper;
+import com.ekusys.exam.repository.mapper.SubjectMapper;
+import com.ekusys.exam.repository.mapper.SubmissionAnswerMapper;
+import com.ekusys.exam.repository.mapper.SubmissionMapper;
+import com.ekusys.exam.repository.mapper.TeachingClassMapper;
+import com.ekusys.exam.repository.mapper.UserMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDateTime;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.MockedStatic;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+
+@ExtendWith(MockitoExtension.class)
+class ExamServiceTest {
+
+    @Mock
+    private ExamMapper examMapper;
+
+    @Mock
+    private PaperMapper paperMapper;
+
+    @Mock
+    private ExamTargetClassMapper examTargetClassMapper;
+
+    @Mock
+    private StudentTeachingClassMapper studentTeachingClassMapper;
+
+    @Mock
+    private TeachingClassMapper teachingClassMapper;
+
+    @Mock
+    private SubjectMapper subjectMapper;
+
+    @Mock
+    private UserMapper userMapper;
+
+    @Mock
+    private ExamSessionMapper examSessionMapper;
+
+    @Mock
+    private SubmissionMapper submissionMapper;
+
+    @Mock
+    private SubmissionAnswerMapper submissionAnswerMapper;
+
+    @Mock
+    private PaperQuestionMapper paperQuestionMapper;
+
+    @Mock
+    private QuestionMapper questionMapper;
+
+    @Mock
+    private QuestionAssetMapper questionAssetMapper;
+
+    @Mock
+    private AntiCheatEventMapper antiCheatEventMapper;
+
+    @Mock
+    private StringRedisTemplate redisTemplate;
+
+    @Mock
+    private ValueOperations<String, String> valueOperations;
+
+    private ExamService examService;
+
+    @BeforeEach
+    void setUp() {
+        examService = new ExamService(
+            examMapper,
+            paperMapper,
+            examTargetClassMapper,
+            studentTeachingClassMapper,
+            teachingClassMapper,
+            subjectMapper,
+            userMapper,
+            examSessionMapper,
+            submissionMapper,
+            submissionAnswerMapper,
+            paperQuestionMapper,
+            questionMapper,
+            questionAssetMapper,
+            antiCheatEventMapper,
+            redisTemplate,
+            new ObjectMapper()
+        );
+    }
+
+    @Test
+    void startExamShouldIncludeQuestionAssets() {
+        Exam exam = new Exam();
+        exam.setId(3001L);
+        exam.setPaperId(7001L);
+        exam.setName("Java 期末");
+        exam.setStatus("ONGOING");
+        exam.setStartTime(LocalDateTime.now().minusMinutes(20));
+        exam.setEndTime(LocalDateTime.now().plusMinutes(40));
+        when(examMapper.selectById(3001L)).thenReturn(exam);
+
+        StudentTeachingClass relation = new StudentTeachingClass();
+        relation.setTeachingClassId(9001L);
+        when(studentTeachingClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(relation));
+        when(examTargetClassMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(1L);
+
+        when(examSessionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(submissionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+
+        PaperQuestion paperQuestion = new PaperQuestion();
+        paperQuestion.setQuestionId(11L);
+        paperQuestion.setScore(5);
+        paperQuestion.setSortOrder(1);
+        when(paperQuestionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(paperQuestion));
+
+        Question question = new Question();
+        question.setId(11L);
+        question.setType("JUDGE");
+        question.setContent("Java 是面向对象语言。");
+        question.setOptionsJson("[{\"label\":\"A\",\"value\":\"true\"},{\"label\":\"B\",\"value\":\"false\"}]");
+        when(questionMapper.selectBatchIds(any())).thenReturn(List.of(question));
+
+        QuestionAsset asset = new QuestionAsset();
+        asset.setId(8101L);
+        asset.setQuestionId(11L);
+        asset.setFileType("IMAGE");
+        asset.setUrl("http://example.com/question-11.png");
+        when(questionAssetMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(asset));
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("exam:snapshot:3001:1001")).thenReturn(null);
+
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(1001L);
+
+            StartExamResponse response = examService.startExam(3001L);
+
+            assertNotNull(response);
+            assertEquals(1, response.getQuestions().size());
+            assertEquals(1, response.getQuestions().get(0).getAssets().size());
+            assertEquals("8101", response.getQuestions().get(0).getAssets().get(0).getAssetId());
+            assertEquals("http://example.com/question-11.png", response.getQuestions().get(0).getAssets().get(0).getUrl());
+        }
+    }
+}

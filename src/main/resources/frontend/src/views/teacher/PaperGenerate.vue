@@ -378,6 +378,7 @@ import {
   queryQuestionsApi,
   updatePaperApi
 } from '../../api'
+import { formatDateTime } from '../../utils/datetime'
 
 const autoForm = reactive({
   name: 'Java 自动组卷',
@@ -510,31 +511,6 @@ const splitQuestionAssets = (assets) => {
     imageAssets: normalized.filter(item => item.fileType === 'IMAGE'),
     otherAssets: normalized.filter(item => item.fileType !== 'IMAGE')
   }
-}
-
-const formatDateTime = (value) => {
-  if (!value) {
-    return '-'
-  }
-  if (Array.isArray(value) && value.length >= 6) {
-    const [year, month, day, hour, minute, second] = value
-    return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`
-  }
-  const text = String(value).trim()
-  if (!text) {
-    return '-'
-  }
-  const normalized = text
-    .replace('T', ' ')
-    .replaceAll('：', ':')
-  const matched = normalized.match(
-    /(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s+(\d{1,2})[:\-](\d{1,2})[:\-](\d{1,2})/
-  )
-  if (matched) {
-    const [, year, month, day, hour, minute, second] = matched
-    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')} ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}:${second.padStart(2, '0')}`
-  }
-  return normalized
 }
 
 const loadSubjectOptions = async () => {

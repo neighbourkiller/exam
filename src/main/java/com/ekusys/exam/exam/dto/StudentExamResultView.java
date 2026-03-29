@@ -6,7 +6,7 @@ import lombok.Data;
 
 @Data
 @Builder
-public class StudentExamView {
+public class StudentExamResultView {
 
     private Long examId;
     private String name;
@@ -14,6 +14,15 @@ public class StudentExamView {
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private Integer durationMinutes;
-    private String status;
+    private String examStatus;
+
+    private Long submissionId;
+    private String submissionStatus;
+    private Integer objectiveScore;
+    private Integer subjectiveScore;
+    private Integer totalScore;
+    private Boolean passFlag;
+    private LocalDateTime submittedAt;
+
     private Boolean submitted;
 }

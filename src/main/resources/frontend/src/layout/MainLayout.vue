@@ -1,6 +1,6 @@
 <template>
-  <div class="layout-root">
-    <aside class="sidebar">
+  <div :class="['layout-root', { 'layout-root--exam': isExamFullscreen }]">
+    <aside v-if="!isExamFullscreen" class="sidebar">
       <div class="logo">Exam MVP</div>
       <el-menu :default-active="active" @select="onSelect" class="menu" unique-opened>
         <el-sub-menu v-if="isTeacher" index="teacher">
@@ -8,6 +8,7 @@
           <el-menu-item index="/teacher/questions">题库管理</el-menu-item>
           <el-menu-item index="/teacher/papers">组卷管理</el-menu-item>
           <el-menu-item index="/teacher/exams">考试发布</el-menu-item>
+          <el-menu-item index="/teacher/proctoring">监考中心</el-menu-item>
           <el-menu-item index="/teacher/classes">班级管理</el-menu-item>
           <el-menu-item index="/teacher/grading">主观阅卷</el-menu-item>
           <el-menu-item index="/teacher/analytics">数据看板</el-menu-item>
@@ -15,6 +16,7 @@
         <el-sub-menu v-if="isStudent" index="student">
           <template #title>学生端</template>
           <el-menu-item index="/student/exams">我的考试</el-menu-item>
+          <el-menu-item index="/student/results">考试结果</el-menu-item>
         </el-sub-menu>
         <el-sub-menu v-if="isAdmin" index="admin">
           <template #title>管理端</template>
@@ -28,7 +30,7 @@
       </div>
     </aside>
 
-    <main class="content">
+    <main :class="['content', { 'content--exam': isExamFullscreen }]">
       <router-view />
     </main>
   </div>
@@ -44,6 +46,7 @@ const router = useRouter()
 const auth = useAuthStore()
 
 const active = computed(() => route.path)
+const isExamFullscreen = computed(() => Boolean(route.meta?.examFullscreen))
 const isAdmin = computed(() => auth.roles.includes('ADMIN'))
 const isTeacher = computed(() => auth.roles.includes('TEACHER') || auth.roles.includes('ADMIN'))
 const isStudent = computed(() => auth.roles.includes('STUDENT'))
@@ -63,6 +66,10 @@ const logout = () => {
   height: 100vh;
   display: grid;
   grid-template-columns: 250px 1fr;
+}
+
+.layout-root--exam {
+  grid-template-columns: 1fr;
 }
 
 .sidebar {
@@ -99,6 +106,11 @@ const logout = () => {
 .content {
   padding: 18px;
   overflow: auto;
+}
+
+.content--exam {
+  padding: 0;
+  overflow: hidden;
 }
 
 @media (max-width: 900px) {

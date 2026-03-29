@@ -262,5 +262,7 @@ CREATE TABLE IF NOT EXISTS anti_cheat_event (
     create_time DATETIME,
     update_time DATETIME,
     create_by BIGINT,
-    update_by BIGINT
+    update_by BIGINT,
+    KEY idx_anti_cheat_event_exam_time (exam_id, event_time),
+    KEY idx_anti_cheat_event_exam_student_time (exam_id, student_id, event_time)
 );
