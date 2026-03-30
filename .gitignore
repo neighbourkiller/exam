@@ -3,7 +3,7 @@ target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
-
+GEMINI.md
 ### STS ###
 .apt_generated
 .classpath
@@ -41,3 +41,4 @@ src/main/resources/frontend/*.log
 # Local AI/tooling cache
 .codex/
 
+.github/
