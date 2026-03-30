@@ -89,7 +89,7 @@
           <el-table-column prop="riskScore" label="风险分" width="90" />
           <el-table-column prop="eventCount" label="异常次数" width="100" />
           <el-table-column label="最近事件" min-width="140">
-            <template #default="{ row }">{{ row.latestEventType || '--' }}</template>
+            <template #default="{ row }">{{ formatEventType(row.latestEventType) }}</template>
           </el-table-column>
           <el-table-column label="最后异常时间" width="180">
             <template #default="{ row }">{{ formatDateTime(row.lastEventTime) }}</template>
@@ -126,7 +126,7 @@
               <span>{{ formatDateTime(event.eventTime) }}</span>
             </div>
             <div class="event-item__body">
-              <span>{{ event.eventType }}</span>
+              <span>{{ formatEventType(event.eventType) }}</span>
               <span>{{ event.durationMs ? formatDuration(event.durationMs) : '瞬时事件' }}</span>
             </div>
           </div>
@@ -137,7 +137,7 @@
           <div class="report-section">
             <h3>事件类型分布</h3>
             <div v-for="item in overview.eventTypeStats" :key="item.eventType" class="stat-row">
-              <span>{{ item.eventType }}</span>
+              <span>{{ formatEventType(item.eventType) }}</span>
               <strong>{{ item.count }}</strong>
             </div>
           </div>
@@ -199,7 +199,7 @@
 
         <div class="timeline-stats">
           <div v-for="item in timeline.eventTypeStats" :key="item.eventType" class="stat-row">
-            <span>{{ item.eventType }}</span>
+            <span>{{ formatEventType(item.eventType) }}</span>
             <strong>{{ item.count }}</strong>
           </div>
         </div>
@@ -207,7 +207,7 @@
         <div class="timeline-list">
           <div v-for="event in timeline.events" :key="`${event.eventType}-${event.eventTime}-${event.durationMs}`" class="timeline-item">
             <div class="timeline-item__head">
-              <strong>{{ event.eventType }}</strong>
+              <strong>{{ formatEventType(event.eventType) }}</strong>
               <span>{{ formatDateTime(event.eventTime) }}</span>
             </div>
             <p class="timeline-item__duration">{{ event.durationMs ? formatDuration(event.durationMs) : '瞬时事件' }}</p>
@@ -279,6 +279,19 @@ const filteredStudents = computed(() =>
 const highRiskStudents = computed(() => students.value.filter((item) => item.riskLevel === 'HIGH'))
 const longOffscreenStudents = computed(() => students.value.filter((item) => item.longOffscreen))
 const snapshotAlertStudents = computed(() => students.value.filter((item) => item.snapshotAlert))
+
+const EVENT_TYPE_MAP = {
+  WINDOW_BLUR: '窗口失去焦点',
+  TAB_HIDDEN: '切换标签页/隐藏',
+  FULLSCREEN_EXIT: '退出全屏',
+  COPY_ATTEMPT: '复制操作',
+  PASTE_ATTEMPT: '粘贴操作',
+  CUT_ATTEMPT: '剪切操作',
+  CONTEXT_MENU: '右键菜单',
+  NETWORK_OFFLINE: '网络离线'
+}
+
+const formatEventType = (type) => EVENT_TYPE_MAP[type] || type || '--'
 
 const riskTagType = (level) => {
   if (level === 'HIGH') return 'danger'

@@ -120,11 +120,11 @@
               监考
             </el-button>
             <span v-if="scope.row.status === 'TERMINATED'">已终止</span>
+            <span v-else-if="scope.row.status === 'FINISHED'">已结束</span>
             <span
               v-else-if="scope.row.status !== 'DRAFT'
                 && scope.row.status !== 'PUBLISHED'
-                && scope.row.status !== 'ONGOING'
-                && scope.row.status !== 'FINISHED'"
+                && scope.row.status !== 'ONGOING'"
             >
               --
             </span>
@@ -161,7 +161,7 @@ const teachingClassOptions = ref([])
 
 const paperLabel = (paper) => `${paper.id} - ${paper.name}`
 const teachingClassLabel = (item) => `${item.id} - ${item.name || ''} (${item.subjectName || '未知课程'})`
-const canOpenProctoring = (status) => ['PUBLISHED', 'ONGOING', 'FINISHED'].includes(status)
+const canOpenProctoring = (status) => ['PUBLISHED', 'ONGOING'].includes(status)
 
 const syncExamTimeRange = () => {
   const normalizedStart = normalizeDateTimeToMinute(form.startTime)

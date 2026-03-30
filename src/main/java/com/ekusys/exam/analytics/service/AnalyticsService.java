@@ -2,6 +2,7 @@ package com.ekusys.exam.analytics.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ekusys.exam.analytics.dto.ClassTrendItem;
+import com.ekusys.exam.analytics.dto.ExamOverviewItem;
 import com.ekusys.exam.analytics.dto.ScoreDistributionItem;
 import com.ekusys.exam.analytics.dto.WrongTopicItem;
 import com.ekusys.exam.repository.entity.Exam;
@@ -29,6 +30,10 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class AnalyticsService {
+
+    private static final int DEFAULT_TOP_N = 10;
+    private static final int MIN_TOP_N = 1;
+    private static final int MAX_TOP_N = 50;
 
     private final SubmissionMapper submissionMapper;
     private final SubmissionAnswerMapper submissionAnswerMapper;
@@ -80,6 +85,50 @@ public class AnalyticsService {
             ScoreDistributionItem.builder().range("80-89").count(buckets[3]).build(),
             ScoreDistributionItem.builder().range("90-100").count(buckets[4]).build()
         );
+    }
+
+    public ExamOverviewItem overview(Long examId) {
+        List<Submission> submissions = submissionMapper.selectList(
+            new LambdaQueryWrapper<Submission>().eq(Submission::getExamId, examId)
+        );
+        if (submissions.isEmpty()) {
+            return ExamOverviewItem.builder()
+                .totalStudents(0)
+                .passCount(0)
+                .passRate(0D)
+                .avgScore(0D)
+                .maxScore(null)
+                .minScore(null)
+                .build();
+        }
+
+        Exam exam = examMapper.selectById(examId);
+        int passScore = exam == null || exam.getPassScore() == null ? 60 : exam.getPassScore();
+
+        int passCount = 0;
+        int maxScore = Integer.MIN_VALUE;
+        int minScore = Integer.MAX_VALUE;
+        long totalScore = 0;
+        for (Submission submission : submissions) {
+            int score = submission.getTotalScore() == null ? 0 : submission.getTotalScore();
+            totalScore += score;
+            maxScore = Math.max(maxScore, score);
+            minScore = Math.min(minScore, score);
+            if (score >= passScore) {
+                passCount++;
+            }
+        }
+
+        double avgScore = totalScore * 1.0 / submissions.size();
+        double passRate = passCount * 100.0 / submissions.size();
+        return ExamOverviewItem.builder()
+            .totalStudents(submissions.size())
+            .passCount(passCount)
+            .passRate(round2(passRate))
+            .avgScore(round2(avgScore))
+            .maxScore(maxScore)
+            .minScore(minScore)
+            .build();
     }
 
     public List<ClassTrendItem> classTrend(Long examId) {
@@ -136,10 +185,15 @@ public class AnalyticsService {
     }
 
     public List<WrongTopicItem> wrongTopics(Long examId) {
+        return wrongTopics(examId, DEFAULT_TOP_N);
+    }
+
+    public List<WrongTopicItem> wrongTopics(Long examId, Integer topN) {
         List<Submission> submissions = submissionMapper.selectList(new LambdaQueryWrapper<Submission>().eq(Submission::getExamId, examId));
         if (submissions.isEmpty()) {
             return List.of();
         }
+        int safeTopN = sanitizeTopN(topN);
         List<Long> submissionIds = submissions.stream().map(Submission::getId).toList();
         List<SubmissionAnswer> answers = submissionAnswerMapper.selectList(new LambdaQueryWrapper<SubmissionAnswer>()
             .in(SubmissionAnswer::getSubmissionId, submissionIds)
@@ -173,8 +227,19 @@ public class AnalyticsService {
 
         return items.stream()
             .sorted((a, b) -> Double.compare(b.getWrongRate(), a.getWrongRate()))
-            .limit(10)
+            .limit(safeTopN)
             .toList();
+    }
+
+    private int sanitizeTopN(Integer topN) {
+        if (topN == null) {
+            return DEFAULT_TOP_N;
+        }
+        return Math.max(MIN_TOP_N, Math.min(MAX_TOP_N, topN));
+    }
+
+    private double round2(double value) {
+        return Math.round(value * 100.0) / 100.0;
     }
 
     private Long findExamSubjectId(Long examId) {
