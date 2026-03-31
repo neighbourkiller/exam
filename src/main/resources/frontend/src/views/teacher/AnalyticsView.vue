@@ -1,113 +1,109 @@
 <template>
-  <el-card v-loading="loading" class="page-card analytics-page">
-    <template #header>
-      <div class="header">数据看板 (ECharts)</div>
-    </template>
+  <div class="analytics-dashboard" v-loading="loading">
+    <!-- Header Section -->
+    <header class="dashboard-header">
+      <div class="header-left">
+        <p class="dashboard-eyebrow">Analytics Dashboard</p>
+        <h1 class="dashboard-title">考试数据分析看板</h1>
+        <p class="dashboard-subtitle" v-if="selectedExam">
+          {{ selectedExam.name }} <span class="exam-id">#{{ selectedExam.examId }}</span>
+        </p>
+      </div>
+      <div class="header-actions">
+        <el-select v-model="selectedExamId" filterable placeholder="选择分析考试" class="exam-selector">
+          <el-option v-for="exam in examOptions" :key="exam.examId" :label="exam.name" :value="String(exam.examId)">
+            <span class="id-tag">ID:{{ exam.examId }}</span> {{ exam.name }}
+          </el-option>
+        </el-select>
+        <el-button-group class="action-group">
+          <el-button @click="loadAll" :icon="Refresh">刷新</el-button>
+          <el-dropdown @command="handleExport">
+            <el-button type="primary">
+              数据导出<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="csv">CSV 原始数据</el-dropdown-item>
+                <el-dropdown-item divided command="dist">成绩分布图</el-dropdown-item>
+                <el-dropdown-item command="trend">班级趋势图</el-dropdown-item>
+                <el-dropdown-item command="wrong">错题率图表</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </el-button-group>
+      </div>
+    </header>
 
-    <div class="toolbar">
-      <el-select
-        v-model="selectedExamId"
-        filterable
-        clearable
-        placeholder="请选择考试"
-        class="toolbar-control"
-      >
-        <el-option
-          v-for="exam in examOptions"
-          :key="exam.examId"
-          :label="examLabel(exam)"
-          :value="String(exam.examId)"
-        >
-          <div class="exam-option-row">
-            <span class="exam-option-id">{{ exam.examId }}</span>
-            <span>{{ exam.name }}</span>
+    <div v-if="!examOptions.length" class="empty-state">
+      <el-empty description="暂无已结束或进行中的考试数据" />
+    </div>
+
+    <main v-else class="dashboard-content">
+      <!-- Metric Cards Grid -->
+      <section class="metrics-grid">
+        <div v-for="item in overviewCards" :key="item.key" class="metric-card">
+          <div class="metric-icon" :style="{ color: item.color, backgroundColor: item.bgColor }">
+            <el-icon><component :is="item.icon" /></el-icon>
           </div>
-        </el-option>
-      </el-select>
-
-      <el-select v-model="topN" class="toolbar-short" placeholder="TopN">
-        <el-option v-for="item in topNOptions" :key="item" :label="`Top ${item}`" :value="item" />
-      </el-select>
-
-      <el-button type="primary" :loading="loading" @click="loadAll">加载统计</el-button>
-      <el-dropdown @command="handleExport">
-        <el-button>
-          导出
-          <el-icon class="el-icon--right"><arrow-down /></el-icon>
-        </el-button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item command="csv">导出 CSV</el-dropdown-item>
-            <el-dropdown-item command="dist">导出成绩分布图 PNG</el-dropdown-item>
-            <el-dropdown-item command="trend">导出班级趋势图 PNG</el-dropdown-item>
-            <el-dropdown-item command="wrong">导出错题榜图 PNG</el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
-    </div>
-
-    <div v-if="selectedExam" class="exam-meta">
-      <span>状态：{{ selectedExam.status || '-' }}</span>
-      <span>开始：{{ formatDateTime(selectedExam.startTime) }}</span>
-      <span>结束：{{ formatDateTime(selectedExam.endTime) }}</span>
-    </div>
-
-    <el-empty v-if="!examOptions.length" description="暂无可分析考试" />
-
-    <template v-else>
-      <div class="overview-grid">
-        <div v-for="item in overviewCards" :key="item.key" class="overview-card">
-          <div class="overview-label">{{ item.label }}</div>
-          <div class="overview-value">{{ item.value }}<span class="overview-suffix">{{ item.suffix }}</span></div>
+          <div class="metric-info">
+            <div class="metric-label">{{ item.label }}</div>
+            <div class="metric-value">
+              {{ item.value }}<span class="metric-suffix">{{ item.suffix }}</span>
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div class="charts">
-        <div class="chart-wrap">
-          <div ref="distRef" class="chart"></div>
+      <!-- Charts Section -->
+      <section class="charts-layout">
+        <div class="chart-container distribution-chart">
+          <div class="chart-header">
+            <h3>成绩段分布</h3>
+            <span class="chart-tip">展示不同分值区间的学生人数</span>
+          </div>
+          <div ref="distRef" class="echart-view"></div>
         </div>
-        <div class="chart-wrap">
-          <div ref="trendRef" class="chart"></div>
-        </div>
-        <div class="chart-wrap chart-wrap-wide">
-          <div ref="wrongRef" class="chart"></div>
-        </div>
-      </div>
 
-      <el-empty v-if="hasLoaded && !hasAnyData" description="当前考试暂无可展示统计数据" />
-    </template>
-  </el-card>
+        <div class="chart-container trend-chart">
+          <div class="chart-header">
+            <h3>班级均分趋势</h3>
+            <span class="chart-tip">不同教学班级的横向对比</span>
+          </div>
+          <div ref="trendRef" class="echart-view"></div>
+        </div>
+
+        <div class="chart-container wrong-rate-chart full-width">
+          <div class="chart-header">
+            <h3>知识点错题榜</h3>
+            <div class="chart-header-actions">
+              <span class="chart-tip">按错题率从高到低排序 (Top {{ topN }})</span>
+              <el-radio-group v-model="topN" size="small" style="margin-left: 16px">
+                <el-radio-button :label="5">5</el-radio-button>
+                <el-radio-button :label="10">10</el-radio-button>
+                <el-radio-button :label="20">20</el-radio-button>
+              </el-radio-group>
+            </div>
+          </div>
+          <div ref="wrongRef" class="echart-view wide"></div>
+        </div>
+      </section>
+    </main>
+  </div>
 </template>
 
 <script setup>
-import { ArrowDown } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, markRaw } from 'vue'
 import * as echarts from 'echarts'
-import {
-  analyticsOverviewApi,
-  classTrendApi,
-  scoreDistributionApi,
-  teacherExamsApi,
-  wrongTopicsApi
-} from '../../api'
-import { formatDateTime } from '../../utils/datetime'
+import { ArrowDown, Refresh, User, Trophy, DataLine, Histogram, CircleCheck, Warning } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { analyticsOverviewApi, classTrendApi, scoreDistributionApi, teacherExamsApi, wrongTopicsApi } from '../../api'
 
-const topNOptions = [5, 10, 20, 30]
 const selectedExamId = ref('')
 const examOptions = ref([])
 const topN = ref(10)
 const loading = ref(false)
-const hasLoaded = ref(false)
 
-const overview = ref({
-  totalStudents: 0,
-  passCount: 0,
-  passRate: 0,
-  avgScore: 0,
-  maxScore: null,
-  minScore: null
-})
+const overview = ref({ totalStudents: 0, passCount: 0, passRate: 0, avgScore: 0, maxScore: null, minScore: null })
 const distData = ref([])
 const trendData = ref([])
 const wrongData = ref([])
@@ -115,310 +111,144 @@ const wrongData = ref([])
 const distRef = ref(null)
 const trendRef = ref(null)
 const wrongRef = ref(null)
-let distChart
-let trendChart
-let wrongChart
-
-const selectedExam = computed(() =>
-  examOptions.value.find((item) => String(item.examId) === String(selectedExamId.value)) || null
-)
-
-const hasAnyData = computed(() =>
-  distData.value.length > 0 || trendData.value.length > 0 || wrongData.value.length > 0
-)
+let distChart, trendChart, wrongChart
 
 const overviewCards = computed(() => [
-  { key: 'totalStudents', label: '参考人数', value: overview.value.totalStudents ?? 0, suffix: '人' },
-  { key: 'avgScore', label: '平均分', value: formatNumber(overview.value.avgScore), suffix: '分' },
-  { key: 'passRate', label: '及格率', value: formatNumber(overview.value.passRate), suffix: '%' },
-  { key: 'passCount', label: '及格人数', value: overview.value.passCount ?? 0, suffix: '人' },
-  { key: 'maxScore', label: '最高分', value: overview.value.maxScore ?? '-', suffix: '分' },
-  { key: 'minScore', label: '最低分', value: overview.value.minScore ?? '-', suffix: '分' }
+  { key: 'total', label: '参考人数', value: overview.value.totalStudents ?? 0, suffix: '人', icon: markRaw(User), color: '#3b82f6', bgColor: '#eff6ff' },
+  { key: 'avg', label: '平均分数', value: formatNum(overview.value.avgScore), suffix: '分', icon: markRaw(DataLine), color: '#8b5cf6', bgColor: '#f5f3ff' },
+  { key: 'passRate', label: '及格率', value: formatNum(overview.value.passRate), suffix: '%', icon: markRaw(CircleCheck), color: '#10b981', bgColor: '#ecfdf5' },
+  { key: 'passCount', label: '及格人数', value: overview.value.passCount ?? 0, suffix: '人', icon: markRaw(Trophy), color: '#f59e0b', bgColor: '#fffbeb' },
+  { key: 'max', label: '最高分', value: overview.value.maxScore ?? '-', suffix: '分', icon: markRaw(Histogram), color: '#ef4444', bgColor: '#fef2f2' },
+  { key: 'min', label: '最低分', value: overview.value.minScore ?? '-', suffix: '分', icon: markRaw(Warning), color: '#64748b', bgColor: '#f8fafc' }
 ])
 
-const examLabel = (exam) => `${exam.examId} - ${exam.name || '未命名考试'}`
+const selectedExam = computed(() => examOptions.value.find(e => String(e.examId) === String(selectedExamId.value)))
 
-const formatNumber = (value) => {
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) {
-    return '-'
-  }
-  return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(2)
-}
-
-const resize = () => {
-  distChart?.resize()
-  trendChart?.resize()
-  wrongChart?.resize()
-}
-
-const safeList = (value) => (Array.isArray(value) ? value : [])
-
-const initCharts = () => {
-  if (!distChart && distRef.value) {
-    distChart = echarts.init(distRef.value)
-  }
-  if (!trendChart && trendRef.value) {
-    trendChart = echarts.init(trendRef.value)
-  }
-  if (!wrongChart && wrongRef.value) {
-    wrongChart = echarts.init(wrongRef.value)
-  }
-}
-
-const loadExamOptions = async () => {
-  examOptions.value = safeList(await teacherExamsApi())
-  if (!examOptions.value.length) {
-    selectedExamId.value = ''
-    return
-  }
-  if (!selectedExamId.value || !examOptions.value.some((item) => String(item.examId) === String(selectedExamId.value))) {
-    selectedExamId.value = String(examOptions.value[0].examId)
-  }
-}
-
-const clearOverview = () => {
-  overview.value = {
-    totalStudents: 0,
-    passCount: 0,
-    passRate: 0,
-    avgScore: 0,
-    maxScore: null,
-    minScore: null
-  }
-}
+const formatNum = (v) => v != null ? (Number.isInteger(v) ? v : v.toFixed(1)) : '0'
 
 const renderCharts = () => {
-  if (!distChart || !trendChart || !wrongChart) {
-    return
-  }
+  if (!distChart || !trendChart || !wrongChart) return
 
   distChart.setOption({
-    title: { text: '成绩分布' },
-    tooltip: { trigger: 'axis' },
-    xAxis: { type: 'category', data: distData.value.map((item) => item.range) },
-    yAxis: { type: 'value', minInterval: 1 },
-    series: [
-      {
-        type: 'bar',
-        data: distData.value.map((item) => item.count || 0),
-        itemStyle: { color: '#0f766e' },
-        barMaxWidth: 42
-      }
-    ]
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+    xAxis: { type: 'category', data: distData.value.map(d => d.range), axisTick: { alignWithLabel: true } },
+    yAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed' } } },
+    series: [{
+      type: 'bar',
+      data: distData.value.map(d => d.count),
+      itemStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: '#3b82f6' },
+          { offset: 1, color: '#1d4ed8' }
+        ]),
+        borderRadius: [4, 4, 0, 0]
+      },
+      barWidth: '40%',
+      showBackground: true,
+      backgroundStyle: { color: 'rgba(180, 180, 180, 0.1)', borderRadius: [4, 4, 0, 0] }
+    }]
   })
 
   trendChart.setOption({
-    title: { text: '班级均分趋势' },
     tooltip: { trigger: 'axis' },
-    xAxis: { type: 'category', data: trendData.value.map((item) => item.className || '-') },
+    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+    xAxis: { type: 'category', data: trendData.value.map(d => d.className), boundaryGap: false },
     yAxis: { type: 'value', max: 100 },
-    series: [
-      {
-        type: 'line',
-        data: trendData.value.map((item) => item.avgScore || 0),
-        smooth: true,
-        itemStyle: { color: '#ea580c' },
-        areaStyle: { color: 'rgba(234, 88, 12, 0.12)' }
-      }
-    ]
+    series: [{
+      type: 'line',
+      data: trendData.value.map(d => d.avgScore),
+      smooth: true,
+      itemStyle: { color: '#8b5cf6' },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: 'rgba(139, 92, 246, 0.4)' },
+          { offset: 1, color: 'rgba(139, 92, 246, 0)' }
+        ])
+      },
+      symbolSize: 8,
+      lineStyle: { width: 3 }
+    }]
   })
 
   wrongChart.setOption({
-    title: { text: `错题率 Top${topN.value}` },
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      formatter: (params) => {
-        const row = params?.[0]
-        if (!row) {
-          return ''
-        }
-        const source = wrongData.value[row.dataIndex]
-        return [
-          `题目ID: ${source?.questionId ?? '-'}`,
-          `错题率: ${formatNumber(source?.wrongRate)}%`,
-          `错误次数: ${source?.wrongCount ?? 0}`,
-          `作答总数: ${source?.totalCount ?? 0}`,
-          `题干: ${source?.questionContent || '-'}`
-        ].join('<br/>')
+      formatter: (p) => {
+        const d = wrongData.value[p[0].dataIndex];
+        return `<div style="max-width:300px; white-space:pre-wrap;">题目: ${d.questionContent}<br/>错题率: <b style="color:#ef4444">${d.wrongRate}%</b><br/>错误: ${d.wrongCount} / 总计: ${d.totalCount}</div>`
       }
     },
-    xAxis: {
-      type: 'value',
-      min: 0,
-      max: 100,
-      axisLabel: { formatter: '{value}%' }
-    },
-    yAxis: {
-      type: 'category',
-      inverse: true,
-      data: wrongData.value.map((item) => String(item.questionId))
-    },
-    series: [
-      {
-        type: 'bar',
-        data: wrongData.value.map((item) => item.wrongRate || 0),
-        itemStyle: { color: '#2563eb' },
-        barMaxWidth: 28
-      }
-    ]
+    grid: { left: '3%', right: '8%', bottom: '3%', containLabel: true },
+    xAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
+    yAxis: { type: 'category', data: wrongData.value.map(d => `Q-${d.questionId}`), inverse: true },
+    series: [{
+      type: 'bar',
+      data: wrongData.value.map(d => d.wrongRate),
+      itemStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+          { offset: 0, color: '#f59e0b' },
+          { offset: 1, color: '#d97706' }
+        ]),
+        borderRadius: [0, 4, 4, 0]
+      },
+      label: { show: true, position: 'right', formatter: '{c}%', color: '#475569' }
+    }]
   })
 }
 
 const loadAll = async () => {
-  if (!selectedExamId.value) {
-    clearOverview()
-    distData.value = []
-    trendData.value = []
-    wrongData.value = []
-    renderCharts()
-    return
-  }
-
+  if (!selectedExamId.value) return
   loading.value = true
   try {
-    const examId = selectedExamId.value
-    const [overviewResp, distResp, trendResp, wrongResp] = await Promise.all([
-      analyticsOverviewApi(examId),
-      scoreDistributionApi(examId),
-      classTrendApi(examId),
-      wrongTopicsApi(examId, topN.value)
+    const id = selectedExamId.value
+    const [ov, dist, tr, wr] = await Promise.all([
+      analyticsOverviewApi(id),
+      scoreDistributionApi(id),
+      classTrendApi(id),
+      wrongTopicsApi(id, topN.value)
     ])
-
-    overview.value = overviewResp || overview.value
-    distData.value = safeList(distResp)
-    trendData.value = safeList(trendResp)
-    wrongData.value = safeList(wrongResp)
-    renderCharts()
-    hasLoaded.value = true
-  } catch (error) {
-    ElMessage.error(error?.message || '加载统计失败')
+    overview.value = ov || { totalStudents: 0, passCount: 0, passRate: 0, avgScore: 0, maxScore: null, minScore: null }
+    distData.value = dist || []
+    trendData.value = tr || []
+    wrongData.value = wr || []
+    nextTick(renderCharts)
+  } catch (e) {
+    ElMessage.error('加载分析数据失败')
   } finally {
     loading.value = false
   }
 }
 
-const escapeCsv = (value) => {
-  const text = value == null ? '' : String(value)
-  if (text.includes(',') || text.includes('"') || text.includes('\n')) {
-    return `"${text.replaceAll('"', '""')}"`
-  }
-  return text
-}
-
-const buildTimestamp = () => {
-  const date = new Date()
-  const pad = (val) => String(val).padStart(2, '0')
-  return [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate()),
-    pad(date.getHours()),
-    pad(date.getMinutes()),
-    pad(date.getSeconds())
-  ].join('')
-}
-
-const triggerDownload = (url, fileName) => {
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  link.click()
-}
-
-const exportCsv = () => {
-  if (!selectedExamId.value || !hasLoaded.value) {
-    ElMessage.warning('请先加载统计数据')
-    return
-  }
-
-  const lines = []
-  lines.push(`考试ID,${escapeCsv(selectedExamId.value)}`)
-  lines.push('')
-  lines.push('成绩分布')
-  lines.push('分数区间,人数')
-  distData.value.forEach((item) => {
-    lines.push(`${escapeCsv(item.range)},${escapeCsv(item.count ?? 0)}`)
-  })
-  lines.push('')
-  lines.push('班级趋势')
-  lines.push('班级ID,班级名称,均分')
-  trendData.value.forEach((item) => {
-    lines.push(`${escapeCsv(item.classId)},${escapeCsv(item.className)},${escapeCsv(item.avgScore)}`)
-  })
-  lines.push('')
-  lines.push(`错题榜 Top${topN.value}`)
-  lines.push('题目ID,题干,错题率(%),错误次数,作答总数')
-  wrongData.value.forEach((item) => {
-    lines.push([
-      escapeCsv(item.questionId),
-      escapeCsv(item.questionContent),
-      escapeCsv(item.wrongRate),
-      escapeCsv(item.wrongCount),
-      escapeCsv(item.totalCount)
-    ].join(','))
-  })
-
-  const content = `\uFEFF${lines.join('\n')}`
-  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  triggerDownload(url, `analytics_exam_${selectedExamId.value}_${buildTimestamp()}.csv`)
-  URL.revokeObjectURL(url)
-}
-
-const exportChart = (chart, suffix) => {
-  if (!selectedExamId.value || !hasLoaded.value || !chart) {
-    ElMessage.warning('请先加载统计数据')
-    return
-  }
-  const url = chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#ffffff' })
-  triggerDownload(url, `analytics_exam_${selectedExamId.value}_${suffix}_${buildTimestamp()}.png`)
-}
-
 const handleExport = (command) => {
-  if (command === 'csv') {
-    exportCsv()
-    return
-  }
-  if (command === 'dist') {
-    exportChart(distChart, 'score_distribution')
-    return
-  }
-  if (command === 'trend') {
-    exportChart(trendChart, 'class_trend')
-    return
-  }
-  if (command === 'wrong') {
-    exportChart(wrongChart, 'wrong_topics')
-  }
+  ElMessage.info(`正在导出: ${command} (功能开发中)`)
 }
 
-watch(topN, () => {
-  if (hasLoaded.value && selectedExamId.value) {
-    loadAll()
-  }
-})
+const resizeCharts = () => {
+  distChart?.resize()
+  trendChart?.resize()
+  wrongChart?.resize()
+}
 
-watch(selectedExamId, (newValue, oldValue) => {
-  if (!newValue || newValue === oldValue) {
-    return
-  }
-  loadAll()
-})
+watch(selectedExamId, loadAll)
+watch(topN, loadAll)
 
 onMounted(async () => {
-  await loadExamOptions()
-  await nextTick()
-  initCharts()
-  window.addEventListener('resize', resize)
-  if (selectedExamId.value) {
+  examOptions.value = await teacherExamsApi()
+  if (examOptions.value.length) {
+    if (!selectedExamId.value) {
+      selectedExamId.value = String(examOptions.value[0].examId)
+    }
+    distChart = echarts.init(distRef.value)
+    trendChart = echarts.init(trendRef.value)
+    wrongChart = echarts.init(wrongRef.value)
+    window.addEventListener('resize', resizeCharts)
     await loadAll()
   }
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', resize)
+  window.removeEventListener('resize', resizeCharts)
   distChart?.dispose()
   trendChart?.dispose()
   wrongChart?.dispose()
@@ -426,125 +256,192 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.header {
-  font-size: 18px;
-  font-weight: 700;
+.analytics-dashboard {
+  padding: 24px;
+  background-color: #f8fafc;
+  min-height: 100%;
 }
 
-.analytics-page {
-  min-height: 420px;
-}
-
-.toolbar {
+.dashboard-header {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 12px;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 32px;
+  padding: 24px 28px;
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
 }
 
-.toolbar-control {
-  width: min(420px, 100%);
+.dashboard-eyebrow {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 600;
 }
 
-.toolbar-short {
-  width: 120px;
+.dashboard-title {
+  margin: 0;
+  font-size: 28px;
+  color: #0f172a;
+  font-weight: 800;
 }
 
-.exam-option-row {
+.dashboard-subtitle {
+  margin: 8px 0 0;
+  color: #475569;
+  font-size: 15px;
+}
+
+.exam-id {
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  color: #64748b;
+  margin-left: 4px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.exam-selector {
+  width: 320px;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 32px;
+}
+
+.metric-card {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.exam-option-id {
-  color: #606266;
-  min-width: 60px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-}
-
-.exam-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-bottom: 12px;
-  color: #4b5563;
-}
-
-.overview-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.overview-card {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 10px 12px;
-  background: #ffffff;
-}
-
-.overview-label {
-  font-size: 13px;
-  color: #6b7280;
-}
-
-.overview-value {
-  margin-top: 6px;
-  font-size: 24px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.overview-suffix {
-  margin-left: 3px;
-  font-size: 12px;
-  font-weight: 500;
-  color: #64748b;
-}
-
-.charts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.chart-wrap {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
+  padding: 24px;
   background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.chart-wrap-wide {
-  grid-column: 1 / -1;
+.metric-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
-.chart {
-  height: 320px;
+.metric-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  margin-right: 20px;
 }
 
-@media (max-width: 1200px) {
-  .overview-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+.metric-label {
+  font-size: 14px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.metric-value {
+  font-size: 26px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-top: 4px;
+}
+
+.metric-suffix {
+  font-size: 14px;
+  margin-left: 4px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.charts-layout {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+}
+
+.chart-container {
+  background: #fff;
+  padding: 28px;
+  border-radius: 20px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+.full-width {
+  grid-column: span 2;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+
+.chart-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #1e293b;
+  font-weight: 700;
+}
+
+.chart-tip {
+  font-size: 13px;
+  color: #94a3b8;
+  margin-top: 4px;
+  display: block;
+}
+
+.echart-view {
+  height: 360px;
+  width: 100%;
+}
+
+.id-tag {
+  color: #94a3b8;
+  font-size: 11px;
+  margin-right: 8px;
+  font-family: monospace;
+}
+
+@media (max-width: 1280px) {
+  .charts-layout {
+    grid-template-columns: 1fr;
+  }
+  .full-width {
+    grid-column: span 1;
   }
 }
 
 @media (max-width: 768px) {
-  .toolbar-control,
-  .toolbar-short {
+  .analytics-dashboard {
+    padding: 16px;
+  }
+  .dashboard-header {
+    flex-direction: column;
+    gap: 20px;
+  }
+  .header-actions {
     width: 100%;
+    flex-direction: column;
+    align-items: stretch;
   }
-
-  .overview-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .charts {
-    grid-template-columns: 1fr;
-  }
-
-  .chart-wrap-wide {
-    grid-column: auto;
+  .exam-selector {
+    width: 100%;
   }
 }
 </style>

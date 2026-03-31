@@ -42,3 +42,6 @@ src/main/resources/frontend/*.log
 .codex/
 
 .github/
+# Claude
+CLAUDE.md
+.claude/
