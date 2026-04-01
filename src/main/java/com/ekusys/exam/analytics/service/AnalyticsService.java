@@ -210,11 +210,14 @@ public class AnalyticsService {
             }
         }
 
+        Map<Long, Question> questionMap = questionMapper.selectBatchIds(total.keySet()).stream()
+            .collect(Collectors.toMap(Question::getId, question -> question, (a, b) -> a));
+
         List<WrongTopicItem> items = new ArrayList<>();
         for (Long qid : total.keySet()) {
             int t = total.getOrDefault(qid, 0);
             int w = wrong.getOrDefault(qid, 0);
-            Question question = questionMapper.selectById(qid);
+            Question question = questionMap.get(qid);
             double rate = t == 0 ? 0 : (w * 1.0 / t);
             items.add(WrongTopicItem.builder()
                 .questionId(qid)

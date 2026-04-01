@@ -34,14 +34,18 @@ export const useAuthStore = defineStore('auth', {
   },
   actions: {
     ensureSession() {
+      if (this.token && !isExpired(this.token)) {
+        return true
+      }
+      if (this.refreshToken) {
+        this.token = this.token || ''
+        return true
+      }
       if (!this.token) {
         return false
       }
-      if (isExpired(this.token)) {
-        this.clear()
-        return false
-      }
-      return true
+      this.clear()
+      return false
     },
     setAuth(payload) {
       this.token = payload.accessToken

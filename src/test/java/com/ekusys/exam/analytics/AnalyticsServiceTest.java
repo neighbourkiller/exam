@@ -3,7 +3,6 @@ package com.ekusys.exam.analytics;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -119,10 +118,11 @@ class AnalyticsServiceTest {
             answer(1L, 30L, true),
             answer(2L, 30L, true)
         ));
-        when(questionMapper.selectById(anyLong())).thenAnswer(invocation -> {
-            Long questionId = invocation.getArgument(0);
-            return question(questionId, "Q" + questionId);
-        });
+        when(questionMapper.selectBatchIds(any())).thenReturn(List.of(
+            question(10L, "Q10"),
+            question(20L, "Q20"),
+            question(30L, "Q30")
+        ));
 
         List<WrongTopicItem> items = analyticsService.wrongTopics(100L, 2);
 
@@ -145,10 +145,10 @@ class AnalyticsServiceTest {
             answer(1L, 20L, false),
             answer(2L, 20L, true)
         ));
-        when(questionMapper.selectById(anyLong())).thenAnswer(invocation -> {
-            Long questionId = invocation.getArgument(0);
-            return question(questionId, "Q" + questionId);
-        });
+        when(questionMapper.selectBatchIds(any())).thenReturn(List.of(
+            question(10L, "Q10"),
+            question(20L, "Q20")
+        ));
 
         List<WrongTopicItem> items = analyticsService.wrongTopics(100L, 0);
 

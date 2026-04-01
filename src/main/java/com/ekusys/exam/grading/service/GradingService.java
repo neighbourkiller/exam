@@ -21,9 +21,14 @@ import com.ekusys.exam.repository.mapper.SubmissionMapper;
 import com.ekusys.exam.repository.mapper.SubjectiveGradeMapper;
 import com.ekusys.exam.repository.mapper.UserMapper;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,27 +64,42 @@ public class GradingService {
             return List.of();
         }
 
-        Map<Long, Exam> examMap = new HashMap<>();
-        Map<Long, User> userMap = new HashMap<>();
-        new java.util.HashSet<>(submissions.stream().map(Submission::getExamId).toList())
-            .forEach(id -> examMap.put(id, examMapper.selectById(id)));
-        new java.util.HashSet<>(submissions.stream().map(Submission::getStudentId).toList())
-            .forEach(id -> userMap.put(id, userMapper.selectById(id)));
+        Set<Long> examIds = submissions.stream().map(Submission::getExamId).collect(Collectors.toSet());
+        Set<Long> studentIds = submissions.stream().map(Submission::getStudentId).collect(Collectors.toSet());
+        List<Long> submissionIds = submissions.stream().map(Submission::getId).toList();
 
-        return submissions.stream().flatMap(submission -> {
-            List<SubmissionAnswer> answers = submissionAnswerMapper.selectList(new LambdaQueryWrapper<SubmissionAnswer>()
-                .eq(SubmissionAnswer::getSubmissionId, submission.getId()));
-            return answers.stream().map(answer -> {
-                Question q = questionMapper.selectById(answer.getQuestionId());
-                if (q == null || !"SHORT".equals(q.getType())) {
-                    return null;
+        Map<Long, Exam> examMap = examIds.isEmpty()
+            ? Map.of()
+            : examMapper.selectBatchIds(examIds).stream().collect(Collectors.toMap(Exam::getId, exam -> exam, (a, b) -> a));
+        Map<Long, User> userMap = studentIds.isEmpty()
+            ? Map.of()
+            : userMapper.selectBatchIds(studentIds).stream().collect(Collectors.toMap(User::getId, user -> user, (a, b) -> a));
+
+        List<SubmissionAnswer> answers = submissionAnswerMapper.selectList(
+            new LambdaQueryWrapper<SubmissionAnswer>().in(SubmissionAnswer::getSubmissionId, submissionIds)
+        );
+        Map<Long, List<SubmissionAnswer>> answersBySubmission = answers.stream()
+            .collect(Collectors.groupingBy(SubmissionAnswer::getSubmissionId));
+
+        Set<Long> questionIds = answers.stream()
+            .map(SubmissionAnswer::getQuestionId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(HashSet::new));
+        Map<Long, Question> questionMap = questionIds.isEmpty()
+            ? Map.of()
+            : questionMapper.selectBatchIds(questionIds).stream().collect(Collectors.toMap(Question::getId, question -> question, (a, b) -> a));
+
+        List<PendingAnswerView> result = new ArrayList<>();
+        for (Submission submission : submissions) {
+            List<SubmissionAnswer> submissionAnswers = answersBySubmission.getOrDefault(submission.getId(), List.of());
+            Exam exam = examMap.get(submission.getExamId());
+            User student = userMap.get(submission.getStudentId());
+            for (SubmissionAnswer answer : submissionAnswers) {
+                Question question = questionMap.get(answer.getQuestionId());
+                if (question == null || !"SHORT".equals(question.getType()) || answer.getSubjectiveScore() != null) {
+                    continue;
                 }
-                if (answer.getSubjectiveScore() != null) {
-                    return null;
-                }
-                Exam exam = examMap.get(submission.getExamId());
-                User student = userMap.get(submission.getStudentId());
-                return PendingAnswerView.builder()
+                result.add(PendingAnswerView.builder()
                     .submissionId(submission.getId())
                     .submissionAnswerId(answer.getId())
                     .examId(submission.getExamId())
@@ -87,11 +107,12 @@ public class GradingService {
                     .studentId(submission.getStudentId())
                     .studentName(student == null ? "" : student.getRealName())
                     .questionId(answer.getQuestionId())
-                    .questionContent(q.getContent())
+                    .questionContent(question.getContent())
                     .answerText(answer.getAnswerText())
-                    .build();
-            }).filter(v -> v != null);
-        }).toList();
+                    .build());
+            }
+        }
+        return result;
     }
 
     @Transactional
@@ -101,12 +122,23 @@ public class GradingService {
             throw new BusinessException("提交记录不存在");
         }
 
+        List<Long> scoreAnswerIds = request.getScores().stream().map(SubjectiveScoreItem::getSubmissionAnswerId).toList();
+        Map<Long, SubmissionAnswer> answerMap = submissionAnswerMapper.selectBatchIds(scoreAnswerIds).stream()
+            .collect(Collectors.toMap(SubmissionAnswer::getId, answer -> answer, (a, b) -> a));
+        Set<Long> questionIds = answerMap.values().stream()
+            .map(SubmissionAnswer::getQuestionId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(HashSet::new));
+        Map<Long, Question> questionMap = questionIds.isEmpty()
+            ? Map.of()
+            : questionMapper.selectBatchIds(questionIds).stream().collect(Collectors.toMap(Question::getId, question -> question, (a, b) -> a));
+
         for (SubjectiveScoreItem score : request.getScores()) {
-            SubmissionAnswer answer = submissionAnswerMapper.selectById(score.getSubmissionAnswerId());
+            SubmissionAnswer answer = answerMap.get(score.getSubmissionAnswerId());
             if (answer == null || !submissionId.equals(answer.getSubmissionId())) {
                 throw new BusinessException("主观题记录不存在");
             }
-            Question question = questionMapper.selectById(answer.getQuestionId());
+            Question question = questionMap.get(answer.getQuestionId());
             if (question == null || !"SHORT".equals(question.getType())) {
                 throw new BusinessException("仅允许批阅简答题");
             }
@@ -126,11 +158,18 @@ public class GradingService {
         List<SubmissionAnswer> answers = submissionAnswerMapper.selectList(
             new LambdaQueryWrapper<SubmissionAnswer>().eq(SubmissionAnswer::getSubmissionId, submissionId)
         );
+        Set<Long> allQuestionIds = answers.stream()
+            .map(SubmissionAnswer::getQuestionId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(HashSet::new));
+        Map<Long, Question> allQuestionMap = allQuestionIds.isEmpty()
+            ? Map.of()
+            : questionMapper.selectBatchIds(allQuestionIds).stream().collect(Collectors.toMap(Question::getId, question -> question, (a, b) -> a));
 
         int objective = answers.stream().map(SubmissionAnswer::getObjectiveScore).filter(v -> v != null).mapToInt(Integer::intValue).sum();
         int subjective = answers.stream().map(SubmissionAnswer::getSubjectiveScore).filter(v -> v != null).mapToInt(Integer::intValue).sum();
         boolean allShortScored = answers.stream().allMatch(answer -> {
-            Question q = questionMapper.selectById(answer.getQuestionId());
+            Question q = allQuestionMap.get(answer.getQuestionId());
             return q == null || !"SHORT".equals(q.getType()) || answer.getSubjectiveScore() != null;
         });
 

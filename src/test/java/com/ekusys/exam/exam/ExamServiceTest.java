@@ -7,9 +7,21 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ekusys.exam.common.config.AppSnapshotProperties;
 import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.exam.dto.StartExamResponse;
+import com.ekusys.exam.exam.service.ExamAccessService;
+import com.ekusys.exam.exam.service.ExamAntiCheatWriteService;
+import com.ekusys.exam.exam.service.ExamLifecycleService;
+import com.ekusys.exam.exam.service.ExamQuestionAssembler;
+import com.ekusys.exam.exam.service.ExamSessionService;
 import com.ekusys.exam.exam.service.ExamService;
+import com.ekusys.exam.exam.service.ExamSnapshotService;
+import com.ekusys.exam.exam.service.ExamStartService;
+import com.ekusys.exam.exam.service.ExamStatusService;
+import com.ekusys.exam.exam.service.ExamStudentQueryService;
+import com.ekusys.exam.exam.service.ExamSubmissionService;
+import com.ekusys.exam.exam.service.ExamTeacherQueryService;
 import com.ekusys.exam.repository.entity.Exam;
 import com.ekusys.exam.repository.entity.PaperQuestion;
 import com.ekusys.exam.repository.entity.Question;
@@ -96,23 +108,73 @@ class ExamServiceTest {
 
     @BeforeEach
     void setUp() {
-        examService = new ExamService(
+        ObjectMapper objectMapper = new ObjectMapper();
+        ExamAccessService accessService = new ExamAccessService(
             examMapper,
-            paperMapper,
             examTargetClassMapper,
             studentTeachingClassMapper,
-            teachingClassMapper,
-            subjectMapper,
-            userMapper,
-            examSessionMapper,
+            userMapper
+        );
+        ExamStatusService statusService = new ExamStatusService(examMapper);
+        ExamSessionService sessionService = new ExamSessionService(examSessionMapper, submissionMapper);
+        AppSnapshotProperties snapshotProperties = new AppSnapshotProperties();
+        ExamSnapshotService snapshotService = new ExamSnapshotService(
+            accessService,
+            sessionService,
+            snapshotProperties,
             submissionMapper,
             submissionAnswerMapper,
+            redisTemplate,
+            objectMapper
+        );
+        ExamQuestionAssembler questionAssembler = new ExamQuestionAssembler(
             paperQuestionMapper,
             questionMapper,
             questionAssetMapper,
-            antiCheatEventMapper,
-            redisTemplate,
-            new ObjectMapper()
+            snapshotService
+        );
+        examService = new ExamService(
+            new ExamLifecycleService(
+                paperMapper,
+                examMapper,
+                examTargetClassMapper,
+                teachingClassMapper,
+                accessService
+            ),
+            new ExamTeacherQueryService(
+                examMapper,
+                teachingClassMapper,
+                subjectMapper,
+                userMapper,
+                accessService,
+                statusService
+            ),
+            new ExamStudentQueryService(
+                examMapper,
+                examTargetClassMapper,
+                submissionMapper,
+                paperMapper,
+                subjectMapper,
+                accessService,
+                statusService
+            ),
+            new ExamStartService(
+                accessService,
+                statusService,
+                sessionService,
+                questionAssembler
+            ),
+            snapshotService,
+            new ExamAntiCheatWriteService(accessService, antiCheatEventMapper),
+            new ExamSubmissionService(
+                accessService,
+                sessionService,
+                snapshotService,
+                submissionMapper,
+                submissionAnswerMapper,
+                paperQuestionMapper,
+                questionMapper
+            )
         );
     }
 

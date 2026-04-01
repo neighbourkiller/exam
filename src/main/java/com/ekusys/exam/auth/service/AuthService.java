@@ -10,6 +10,8 @@ import com.ekusys.exam.common.security.LoginUser;
 import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.repository.entity.User;
 import com.ekusys.exam.repository.mapper.UserMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -17,6 +19,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
@@ -35,6 +39,7 @@ public class AuthService {
             new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
         );
         LoginUser user = (LoginUser) authentication.getPrincipal();
+        log.info("User login success: userId={}, username={}", user.getUserId(), user.getUsername());
         return AuthResponse.builder()
             .accessToken(jwtTokenProvider.createAccessToken(user))
             .refreshToken(jwtTokenProvider.createRefreshToken(user))
@@ -48,6 +53,7 @@ public class AuthService {
             throw new BusinessException("无效的刷新令牌");
         }
         LoginUser user = jwtTokenProvider.parseLoginUser(refreshToken);
+        log.info("Refresh token success: userId={}, username={}", user.getUserId(), user.getUsername());
         return AuthResponse.builder()
             .accessToken(jwtTokenProvider.createAccessToken(user))
             .refreshToken(jwtTokenProvider.createRefreshToken(user))
