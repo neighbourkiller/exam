@@ -3,7 +3,6 @@ package com.ekusys.exam.exam.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ekusys.exam.common.enums.SessionStatus;
 import com.ekusys.exam.common.exception.BusinessException;
-import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.exam.dto.ProctoringEventStatView;
 import com.ekusys.exam.exam.dto.ProctoringOverviewView;
 import com.ekusys.exam.exam.dto.ProctoringRecentEventView;
@@ -47,8 +46,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class ExamProctoringService {
 
-    private static final String ROLE_ADMIN = "ADMIN";
-    private static final String ROLE_TEACHER = "TEACHER";
     private static final String ENROLL_STATUS_ACTIVE = "ACTIVE";
 
     private static final String EVENT_WINDOW_BLUR = "WINDOW_BLUR";
@@ -68,6 +65,7 @@ public class ExamProctoringService {
     private final ExamSessionMapper examSessionMapper;
     private final SubmissionMapper submissionMapper;
     private final AntiCheatEventMapper antiCheatEventMapper;
+    private final ExamPermissionService examPermissionService;
 
     public ExamProctoringService(ExamMapper examMapper,
                                  ExamTargetClassMapper examTargetClassMapper,
@@ -76,7 +74,8 @@ public class ExamProctoringService {
                                  UserMapper userMapper,
                                  ExamSessionMapper examSessionMapper,
                                  SubmissionMapper submissionMapper,
-                                 AntiCheatEventMapper antiCheatEventMapper) {
+                                 AntiCheatEventMapper antiCheatEventMapper,
+                                 ExamPermissionService examPermissionService) {
         this.examMapper = examMapper;
         this.examTargetClassMapper = examTargetClassMapper;
         this.studentTeachingClassMapper = studentTeachingClassMapper;
@@ -85,6 +84,7 @@ public class ExamProctoringService {
         this.examSessionMapper = examSessionMapper;
         this.submissionMapper = submissionMapper;
         this.antiCheatEventMapper = antiCheatEventMapper;
+        this.examPermissionService = examPermissionService;
     }
 
     public ProctoringOverviewView getOverview(Long examId) {
@@ -187,7 +187,7 @@ public class ExamProctoringService {
             ? Map.of()
             : teachingClassMapper.selectBatchIds(classIds).stream()
                 .collect(Collectors.toMap(TeachingClass::getId, item -> item, (a, b) -> a));
-        ensureExamManagePermission(exam, classMap.values());
+        examPermissionService.ensureCanManageExam(exam, "无权限查看该考试监考信息");
 
         List<StudentTeachingClass> enrollments = classIds.isEmpty()
             ? List.of()
@@ -454,26 +454,6 @@ public class ExamProctoringService {
             .totalOffscreenDurationMs(snapshot.totalOffscreenDurationMs())
             .longOffscreen(snapshot.longOffscreen())
             .build();
-    }
-
-    private void ensureExamManagePermission(Exam exam, Collection<TeachingClass> targetClasses) {
-        Long currentUserId = SecurityUtils.getCurrentUserId();
-        Set<String> roleCodes = new HashSet<>(userMapper.selectRoleCodes(currentUserId));
-        if (roleCodes.contains(ROLE_ADMIN)) {
-            return;
-        }
-        if (roleCodes.contains(ROLE_TEACHER)) {
-            if (Objects.equals(exam.getPublisherId(), currentUserId)) {
-                return;
-            }
-            boolean ownsTargetClass = targetClasses != null && targetClasses.stream()
-                .filter(Objects::nonNull)
-                .anyMatch(item -> Objects.equals(item.getTeacherId(), currentUserId));
-            if (ownsTargetClass) {
-                return;
-            }
-        }
-        throw new BusinessException("无权限查看该考试监考信息");
     }
 
     private ExamSession pickLatestSession(ExamSession left, ExamSession right) {

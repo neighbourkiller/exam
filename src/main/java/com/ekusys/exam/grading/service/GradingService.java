@@ -5,6 +5,7 @@ import com.ekusys.exam.common.enums.SubmissionStatus;
 import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.common.util.AnswerJudgeUtil;
+import com.ekusys.exam.exam.service.ExamPermissionService;
 import com.ekusys.exam.grading.dto.PendingAnswerView;
 import com.ekusys.exam.grading.dto.SubjectiveScoreItem;
 import com.ekusys.exam.grading.dto.SubjectiveScoreRequest;
@@ -41,19 +42,22 @@ public class GradingService {
     private final SubjectiveGradeMapper subjectiveGradeMapper;
     private final ExamMapper examMapper;
     private final UserMapper userMapper;
+    private final ExamPermissionService examPermissionService;
 
     public GradingService(SubmissionMapper submissionMapper,
                           SubmissionAnswerMapper submissionAnswerMapper,
                           QuestionMapper questionMapper,
                           SubjectiveGradeMapper subjectiveGradeMapper,
                           ExamMapper examMapper,
-                          UserMapper userMapper) {
+                          UserMapper userMapper,
+                          ExamPermissionService examPermissionService) {
         this.submissionMapper = submissionMapper;
         this.submissionAnswerMapper = submissionAnswerMapper;
         this.questionMapper = questionMapper;
         this.subjectiveGradeMapper = subjectiveGradeMapper;
         this.examMapper = examMapper;
         this.userMapper = userMapper;
+        this.examPermissionService = examPermissionService;
     }
 
     public List<PendingAnswerView> pendingAnswers() {
@@ -65,16 +69,30 @@ public class GradingService {
         }
 
         Set<Long> examIds = submissions.stream().map(Submission::getExamId).collect(Collectors.toSet());
-        Set<Long> studentIds = submissions.stream().map(Submission::getStudentId).collect(Collectors.toSet());
-        List<Long> submissionIds = submissions.stream().map(Submission::getId).toList();
 
         Map<Long, Exam> examMap = examIds.isEmpty()
             ? Map.of()
             : examMapper.selectBatchIds(examIds).stream().collect(Collectors.toMap(Exam::getId, exam -> exam, (a, b) -> a));
+        Set<Long> manageableExamIds = examPermissionService.filterManageableExams(examMap.values()).stream()
+            .map(Exam::getId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        if (manageableExamIds.isEmpty()) {
+            return List.of();
+        }
+        submissions = submissions.stream()
+            .filter(item -> manageableExamIds.contains(item.getExamId()))
+            .toList();
+        if (submissions.isEmpty()) {
+            return List.of();
+        }
+
+        Set<Long> studentIds = submissions.stream().map(Submission::getStudentId).collect(Collectors.toSet());
         Map<Long, User> userMap = studentIds.isEmpty()
             ? Map.of()
             : userMapper.selectBatchIds(studentIds).stream().collect(Collectors.toMap(User::getId, user -> user, (a, b) -> a));
 
+        List<Long> submissionIds = submissions.stream().map(Submission::getId).toList();
         List<SubmissionAnswer> answers = submissionAnswerMapper.selectList(
             new LambdaQueryWrapper<SubmissionAnswer>().in(SubmissionAnswer::getSubmissionId, submissionIds)
         );
@@ -121,6 +139,8 @@ public class GradingService {
         if (submission == null) {
             throw new BusinessException("提交记录不存在");
         }
+        Exam exam = examMapper.selectById(submission.getExamId());
+        examPermissionService.ensureCanManageExam(exam, "无权限批阅该考试");
 
         List<Long> scoreAnswerIds = request.getScores().stream().map(SubjectiveScoreItem::getSubmissionAnswerId).toList();
         Map<Long, SubmissionAnswer> answerMap = submissionAnswerMapper.selectBatchIds(scoreAnswerIds).stream()
@@ -176,7 +196,6 @@ public class GradingService {
         submission.setObjectiveScore(objective);
         submission.setSubjectiveScore(subjective);
         submission.setTotalScore(objective + subjective);
-        Exam exam = examMapper.selectById(submission.getExamId());
         submission.setPassFlag(exam != null && submission.getTotalScore() >= exam.getPassScore());
         submission.setStatus(allShortScored ? SubmissionStatus.GRADED.name() : SubmissionStatus.SUBMITTED.name());
         submissionMapper.updateById(submission);

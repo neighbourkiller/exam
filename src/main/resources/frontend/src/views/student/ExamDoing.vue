@@ -374,6 +374,11 @@ const reportAntiCheatEvent = async (eventType, durationMs = 0, extraPayload = {}
 }
 
 const resolveExamEndTime = (data) => {
+  const deadline = parseDateTime(data?.deadlineTime)
+  if (deadline) {
+    return deadline
+  }
+
   const explicitEnd = parseDateTime(data?.endTime)
   if (explicitEnd) {
     return explicitEnd
@@ -407,8 +412,10 @@ const sendSnapshot = async () => {
   await snapshotApi(examId, payload)
 }
 
-const submit = async () => {
-  await ElMessageBox.confirm('确认提交试卷？提交后不可修改。', '提示')
+const submit = async (needConfirm = true) => {
+  if (needConfirm) {
+    await ElMessageBox.confirm('确认提交试卷？提交后不可修改。', '提示')
+  }
   const payload = {
     answers: state.questions.map((q) => ({
       questionId: q.questionId,
@@ -531,7 +538,7 @@ onMounted(async () => {
     syncCountdown()
     if (Number.isFinite(secondsLeft.value) && secondsLeft.value <= 0) {
       clearInterval(timer)
-      submit()
+      submit(false)
     }
   }, 1000)
 

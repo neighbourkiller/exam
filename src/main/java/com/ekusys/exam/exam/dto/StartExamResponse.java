@@ -14,5 +14,6 @@ public class StartExamResponse {
     private Integer durationMinutes;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
+    private LocalDateTime deadlineTime;
     private List<StudentExamQuestionView> questions;
 }

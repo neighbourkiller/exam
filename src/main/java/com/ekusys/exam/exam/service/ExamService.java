@@ -24,6 +24,7 @@ public class ExamService {
     private final ExamSnapshotService examSnapshotService;
     private final ExamAntiCheatWriteService examAntiCheatWriteService;
     private final ExamSubmissionService examSubmissionService;
+    private final ExamAutoSubmitService examAutoSubmitService;
 
     public ExamService(ExamLifecycleService examLifecycleService,
                        ExamTeacherQueryService examTeacherQueryService,
@@ -31,7 +32,8 @@ public class ExamService {
                        ExamStartService examStartService,
                        ExamSnapshotService examSnapshotService,
                        ExamAntiCheatWriteService examAntiCheatWriteService,
-                       ExamSubmissionService examSubmissionService) {
+                       ExamSubmissionService examSubmissionService,
+                       ExamAutoSubmitService examAutoSubmitService) {
         this.examLifecycleService = examLifecycleService;
         this.examTeacherQueryService = examTeacherQueryService;
         this.examStudentQueryService = examStudentQueryService;
@@ -39,6 +41,7 @@ public class ExamService {
         this.examSnapshotService = examSnapshotService;
         this.examAntiCheatWriteService = examAntiCheatWriteService;
         this.examSubmissionService = examSubmissionService;
+        this.examAutoSubmitService = examAutoSubmitService;
     }
 
     public Long createExam(ExamCreateRequest request) {
@@ -95,5 +98,9 @@ public class ExamService {
 
     public void flushSnapshotKey(String key) {
         examSnapshotService.flushSnapshotKey(key);
+    }
+
+    public void autoSubmitExpiredSessions() {
+        examAutoSubmitService.autoSubmitExpiredSessions();
     }
 }

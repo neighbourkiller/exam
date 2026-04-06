@@ -5,6 +5,7 @@ import com.ekusys.exam.analytics.dto.ClassTrendItem;
 import com.ekusys.exam.analytics.dto.ExamOverviewItem;
 import com.ekusys.exam.analytics.dto.ScoreDistributionItem;
 import com.ekusys.exam.analytics.dto.WrongTopicItem;
+import com.ekusys.exam.exam.service.ExamPermissionService;
 import com.ekusys.exam.repository.entity.Exam;
 import com.ekusys.exam.repository.entity.Paper;
 import com.ekusys.exam.repository.entity.Question;
@@ -42,6 +43,7 @@ public class AnalyticsService {
     private final StudentTeachingClassMapper studentTeachingClassMapper;
     private final TeachingClassMapper teachingClassMapper;
     private final QuestionMapper questionMapper;
+    private final ExamPermissionService examPermissionService;
 
     public AnalyticsService(SubmissionMapper submissionMapper,
                             SubmissionAnswerMapper submissionAnswerMapper,
@@ -49,7 +51,8 @@ public class AnalyticsService {
                             PaperMapper paperMapper,
                             StudentTeachingClassMapper studentTeachingClassMapper,
                             TeachingClassMapper teachingClassMapper,
-                            QuestionMapper questionMapper) {
+                            QuestionMapper questionMapper,
+                            ExamPermissionService examPermissionService) {
         this.submissionMapper = submissionMapper;
         this.submissionAnswerMapper = submissionAnswerMapper;
         this.examMapper = examMapper;
@@ -57,9 +60,11 @@ public class AnalyticsService {
         this.studentTeachingClassMapper = studentTeachingClassMapper;
         this.teachingClassMapper = teachingClassMapper;
         this.questionMapper = questionMapper;
+        this.examPermissionService = examPermissionService;
     }
 
     public List<ScoreDistributionItem> scoreDistribution(Long examId) {
+        ensureExamManagePermission(examId);
         List<Submission> submissions = submissionMapper.selectList(
             new LambdaQueryWrapper<Submission>().eq(Submission::getExamId, examId)
         );
@@ -88,6 +93,7 @@ public class AnalyticsService {
     }
 
     public ExamOverviewItem overview(Long examId) {
+        Exam exam = ensureExamManagePermission(examId);
         List<Submission> submissions = submissionMapper.selectList(
             new LambdaQueryWrapper<Submission>().eq(Submission::getExamId, examId)
         );
@@ -102,7 +108,6 @@ public class AnalyticsService {
                 .build();
         }
 
-        Exam exam = examMapper.selectById(examId);
         int passScore = exam == null || exam.getPassScore() == null ? 60 : exam.getPassScore();
 
         int passCount = 0;
@@ -132,6 +137,7 @@ public class AnalyticsService {
     }
 
     public List<ClassTrendItem> classTrend(Long examId) {
+        ensureExamManagePermission(examId);
         List<Submission> submissions = submissionMapper.selectList(new LambdaQueryWrapper<Submission>().eq(Submission::getExamId, examId));
         if (submissions.isEmpty()) {
             return List.of();
@@ -189,6 +195,7 @@ public class AnalyticsService {
     }
 
     public List<WrongTopicItem> wrongTopics(Long examId, Integer topN) {
+        ensureExamManagePermission(examId);
         List<Submission> submissions = submissionMapper.selectList(new LambdaQueryWrapper<Submission>().eq(Submission::getExamId, examId));
         if (submissions.isEmpty()) {
             return List.of();
@@ -252,5 +259,11 @@ public class AnalyticsService {
         }
         Paper paper = paperMapper.selectById(exam.getPaperId());
         return paper == null ? null : paper.getSubjectId();
+    }
+
+    private Exam ensureExamManagePermission(Long examId) {
+        Exam exam = examMapper.selectById(examId);
+        examPermissionService.ensureCanManageExam(exam, "无权限查看该考试分析数据");
+        return exam;
     }
 }

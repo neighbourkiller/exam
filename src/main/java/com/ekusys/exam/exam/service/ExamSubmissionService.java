@@ -63,13 +63,38 @@ public class ExamSubmissionService {
         examAccessService.checkStudentAccess(examId, studentId);
 
         ExamSession session = examSessionService.findLatestSession(examId, studentId);
-        if (session == null || SessionStatus.SUBMITTED.name().equals(session.getStatus())) {
+        if (session == null || SessionStatus.SUBMITTED.name().equals(session.getStatus())
+            || SessionStatus.TIMEOUT.name().equals(session.getStatus())) {
             throw new BusinessException("不可重复交卷");
         }
+        if (examSessionService.isExpired(session, LocalDateTime.now())) {
+            throw new BusinessException("考试作答时间已结束，系统将自动交卷");
+        }
 
-        Submission submission = examSessionService.ensureInProgressSubmission(examId, studentId);
         Map<Long, String> answerMap = request.getAnswers().stream()
             .collect(Collectors.toMap(AnswerPayload::getQuestionId, AnswerPayload::getAnswerText, (a, b) -> b));
+        return finalizeSubmission(exam, session, studentId, answerMap, LocalDateTime.now(), false);
+    }
+
+    @Transactional
+    public void submitExpiredSession(Long examId, Long studentId, LocalDateTime submittedAt) {
+        Exam exam = examAccessService.ensureExam(examId);
+        ExamSession session = examSessionService.findLatestSession(examId, studentId);
+        if (session == null || SessionStatus.SUBMITTED.name().equals(session.getStatus())
+            || SessionStatus.TIMEOUT.name().equals(session.getStatus())) {
+            return;
+        }
+        Map<Long, String> answerMap = examSnapshotService.loadSnapshotAnswerMap(examId, studentId);
+        finalizeSubmission(exam, session, studentId, answerMap, submittedAt == null ? LocalDateTime.now() : submittedAt, true);
+    }
+
+    private SubmitResultView finalizeSubmission(Exam exam,
+                                                ExamSession session,
+                                                Long studentId,
+                                                Map<Long, String> answerMap,
+                                                LocalDateTime submittedAt,
+                                                boolean timeoutSubmit) {
+        Submission submission = examSessionService.ensureInProgressSubmission(exam.getId(), studentId);
 
         List<PaperQuestion> paperQuestions = paperQuestionMapper.selectList(
             new LambdaQueryWrapper<PaperQuestion>()
@@ -115,16 +140,19 @@ public class ExamSubmissionService {
         submission.setObjectiveScore(objectiveScore);
         submission.setSubjectiveScore(subjectiveScore);
         submission.setTotalScore(objectiveScore + subjectiveScore);
-        submission.setSubmittedAt(LocalDateTime.now());
+        submission.setSubmittedAt(submittedAt);
         submission.setStatus(hasShort ? SubmissionStatus.SUBMITTED.name() : SubmissionStatus.GRADED.name());
         submission.setPassFlag(submission.getTotalScore() >= exam.getPassScore());
         submissionMapper.updateById(submission);
 
-        LocalDateTime submittedAt = LocalDateTime.now();
-        examSessionService.markSubmitted(session, submittedAt);
-        examSnapshotService.clearSnapshot(examId, studentId);
-        log.info("Exam submitted: examId={}, studentId={}, submissionId={}, status={}, totalScore={}",
-            examId, studentId, submission.getId(), submission.getStatus(), submission.getTotalScore());
+        if (timeoutSubmit) {
+            examSessionService.markTimeout(session, submittedAt);
+        } else {
+            examSessionService.markSubmitted(session, submittedAt);
+        }
+        examSnapshotService.clearSnapshot(exam.getId(), studentId);
+        log.info("Exam submitted: examId={}, studentId={}, submissionId={}, status={}, totalScore={}, timeoutSubmit={}",
+            exam.getId(), studentId, submission.getId(), submission.getStatus(), submission.getTotalScore(), timeoutSubmit);
 
         return SubmitResultView.builder()
             .submissionId(submission.getId())

@@ -13,6 +13,8 @@ import com.ekusys.exam.exam.dto.StartExamResponse;
 import com.ekusys.exam.exam.service.ExamAccessService;
 import com.ekusys.exam.exam.service.ExamAntiCheatWriteService;
 import com.ekusys.exam.exam.service.ExamLifecycleService;
+import com.ekusys.exam.exam.service.ExamAutoSubmitService;
+import com.ekusys.exam.exam.service.ExamPermissionService;
 import com.ekusys.exam.exam.service.ExamQuestionAssembler;
 import com.ekusys.exam.exam.service.ExamSessionService;
 import com.ekusys.exam.exam.service.ExamService;
@@ -147,7 +149,8 @@ class ExamServiceTest {
                 subjectMapper,
                 userMapper,
                 accessService,
-                statusService
+                statusService,
+                new ExamPermissionService(userMapper, examTargetClassMapper, teachingClassMapper)
             ),
             new ExamStudentQueryService(
                 examMapper,
@@ -174,6 +177,18 @@ class ExamServiceTest {
                 submissionAnswerMapper,
                 paperQuestionMapper,
                 questionMapper
+            ),
+            new ExamAutoSubmitService(
+                sessionService,
+                new ExamSubmissionService(
+                    accessService,
+                    sessionService,
+                    snapshotService,
+                    submissionMapper,
+                    submissionAnswerMapper,
+                    paperQuestionMapper,
+                    questionMapper
+                )
             )
         );
     }
@@ -185,6 +200,7 @@ class ExamServiceTest {
         exam.setPaperId(7001L);
         exam.setName("Java 期末");
         exam.setStatus("ONGOING");
+        exam.setDurationMinutes(60);
         exam.setStartTime(LocalDateTime.now().minusMinutes(20));
         exam.setEndTime(LocalDateTime.now().plusMinutes(40));
         when(examMapper.selectById(3001L)).thenReturn(exam);
@@ -230,6 +246,8 @@ class ExamServiceTest {
             assertEquals(1, response.getQuestions().get(0).getAssets().size());
             assertEquals("8101", response.getQuestions().get(0).getAssets().get(0).getAssetId());
             assertEquals("http://example.com/question-11.png", response.getQuestions().get(0).getAssets().get(0).getUrl());
+            assertNotNull(response.getDeadlineTime());
+            assertEquals(exam.getEndTime().withNano(0), response.getDeadlineTime().withNano(0));
         }
     }
 }

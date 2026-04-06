@@ -12,7 +12,7 @@ spring:
       port: ${REDIS_PORT:6379}
       database: ${REDIS_DATABASE:0}
       timeout: ${REDIS_TIMEOUT:3s}
-      password: ${REDIS_PASSWORD:962464}
+      # password: ${REDIS_PASSWORD:962464}
   jackson:
     default-property-inclusion: non_null
   sql:
@@ -41,6 +41,8 @@ jwt:
   refresh-token-expire-days: ${JWT_REFRESH_TOKEN_EXPIRE_DAYS:7}
 
 app:
+  exam:
+    timeout-scan-interval-ms: ${APP_EXAM_TIMEOUT_SCAN_INTERVAL_MS:15000}
   cors:
     allowed-origins:
       - ${APP_CORS_ORIGIN_1:http://localhost:5173}

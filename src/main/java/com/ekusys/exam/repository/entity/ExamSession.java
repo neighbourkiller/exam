@@ -16,6 +16,7 @@ public class ExamSession extends BaseEntity {
     private Long studentId;
     private String status;
     private LocalDateTime startTime;
+    private LocalDateTime deadlineTime;
     private LocalDateTime endTime;
     private LocalDateTime lastSnapshotTime;
 }

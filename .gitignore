@@ -45,3 +45,4 @@ src/main/resources/frontend/*.log
 # Claude
 CLAUDE.md
 .claude/
+.agents/

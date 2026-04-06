@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 import javax.crypto.SecretKey;
 import org.springframework.stereotype.Component;
 
@@ -30,13 +31,14 @@ public class JwtTokenProvider {
             .claim("uid", user.getUserId())
             .claim("roles", user.getRoles())
             .claim("typ", "access")
+            .id(UUID.randomUUID().toString())
             .issuedAt(Date.from(now))
             .expiration(Date.from(expires))
             .signWith(getSignKey(), SignatureAlgorithm.HS256)
             .compact();
     }
 
-    public String createRefreshToken(LoginUser user) {
+    public String createRefreshToken(LoginUser user, String tokenId) {
         Instant now = Instant.now();
         Instant expires = now.plus(properties.getRefreshTokenExpireDays(), ChronoUnit.DAYS);
         return Jwts.builder()
@@ -45,6 +47,7 @@ public class JwtTokenProvider {
             .claim("uid", user.getUserId())
             .claim("roles", user.getRoles())
             .claim("typ", "refresh")
+            .id(tokenId)
             .issuedAt(Date.from(now))
             .expiration(Date.from(expires))
             .signWith(getSignKey(), SignatureAlgorithm.HS256)
@@ -74,6 +77,22 @@ public class JwtTokenProvider {
     public boolean isRefreshToken(String token) {
         Claims claims = parseClaims(token);
         return "refresh".equals(claims.get("typ", String.class));
+    }
+
+    public boolean isAccessToken(String token) {
+        Claims claims = parseClaims(token);
+        return "access".equals(claims.get("typ", String.class));
+    }
+
+    public String getTokenId(String token) {
+        Claims claims = parseClaims(token);
+        return claims.getId();
+    }
+
+    public Instant getExpiration(String token) {
+        Claims claims = parseClaims(token);
+        Date expiration = claims.getExpiration();
+        return expiration == null ? null : expiration.toInstant();
     }
 
     private SecretKey getSignKey() {

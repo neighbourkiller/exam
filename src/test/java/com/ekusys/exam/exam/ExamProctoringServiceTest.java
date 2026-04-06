@@ -13,6 +13,7 @@ import com.ekusys.exam.common.enums.SessionStatus;
 import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.exam.dto.ProctoringOverviewView;
 import com.ekusys.exam.exam.dto.ProctoringStudentTimelineView;
+import com.ekusys.exam.exam.service.ExamPermissionService;
 import com.ekusys.exam.exam.service.ExamProctoringService;
 import com.ekusys.exam.repository.entity.AntiCheatEvent;
 import com.ekusys.exam.repository.entity.Exam;
@@ -78,7 +79,8 @@ class ExamProctoringServiceTest {
             userMapper,
             examSessionMapper,
             submissionMapper,
-            antiCheatEventMapper
+            antiCheatEventMapper,
+            new ExamPermissionService(userMapper, examTargetClassMapper, teachingClassMapper)
         );
     }
 

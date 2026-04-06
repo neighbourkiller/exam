@@ -54,7 +54,8 @@ public class ExamStartService {
             throw new BusinessException("考试已结束");
         }
 
-        examSessionService.startAnsweringSession(examId, studentId, now);
+        LocalDateTime deadlineTime = resolveDeadlineTime(exam, now);
+        var session = examSessionService.startAnsweringSession(examId, studentId, now, deadlineTime);
         examSessionService.ensureInProgressSubmission(examId, studentId);
         log.info("Exam started: examId={}, studentId={}", examId, studentId);
 
@@ -64,7 +65,19 @@ public class ExamStartService {
             .durationMinutes(exam.getDurationMinutes())
             .startTime(exam.getStartTime())
             .endTime(exam.getEndTime())
+            .deadlineTime(session.getDeadlineTime())
             .questions(examQuestionAssembler.assembleQuestions(exam.getPaperId(), examId, studentId))
             .build();
+    }
+
+    private LocalDateTime resolveDeadlineTime(Exam exam, LocalDateTime now) {
+        if (exam == null || now == null) {
+            return null;
+        }
+        LocalDateTime candidate = now.plusMinutes(Math.max(1, exam.getDurationMinutes() == null ? 1 : exam.getDurationMinutes()));
+        if (exam.getEndTime() == null || candidate.isBefore(exam.getEndTime())) {
+            return candidate;
+        }
+        return exam.getEndTime();
     }
 }

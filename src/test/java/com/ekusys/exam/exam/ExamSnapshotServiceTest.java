@@ -32,6 +32,7 @@ import com.ekusys.exam.repository.mapper.UserMapper;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -147,6 +148,33 @@ class ExamSnapshotServiceTest {
         verify(redisTemplate).delete("exam:snapshot:1:100");
         verify(submissionAnswerMapper, never()).insert(org.mockito.ArgumentMatchers.<SubmissionAnswer>any());
     }
-}
 
+    @Test
+    void loadSnapshotAnswerMapShouldMergePersistedDraftAndRedisSnapshot() {
+        Submission submission = new Submission();
+        submission.setId(20L);
+        submission.setExamId(1L);
+        submission.setStudentId(100L);
+        submission.setStatus("IN_PROGRESS");
+        when(submissionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(submission);
+
+        SubmissionAnswer persisted = new SubmissionAnswer();
+        persisted.setSubmissionId(20L);
+        persisted.setQuestionId(11L);
+        persisted.setAnswerText("A");
+        persisted.setFinalAnswer(false);
+        when(submissionAnswerMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(persisted));
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("exam:snapshot:1:100")).thenReturn(
+            "{\"answers\":[{\"questionId\":12,\"answerText\":\"B\"},{\"questionId\":11,\"answerText\":\"C\"}]}"
+        );
+
+        Map<Long, String> answerMap = snapshotService.loadSnapshotAnswerMap(1L, 100L);
+
+        assertEquals(2, answerMap.size());
+        assertEquals("C", answerMap.get(11L));
+        assertEquals("B", answerMap.get(12L));
+    }
+}
 

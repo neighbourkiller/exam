@@ -13,11 +13,13 @@ spring:
       port: ${REDIS_PORT:6379}
       database: ${REDIS_DATABASE:0}
       timeout: ${REDIS_TIMEOUT:3s}
-      password: ${REDIS_PASSWORD:962464}
+      # password: ${REDIS_PASSWORD:962464}
   jackson:
     default-property-inclusion: non_null
 
 app:
+  exam:
+    timeout-scan-interval-ms: ${APP_EXAM_TIMEOUT_SCAN_INTERVAL_MS:15000}
   minio:
     endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
     public-endpoint: ${MINIO_PUBLIC_ENDPOINT:http://127.0.0.1:9000}

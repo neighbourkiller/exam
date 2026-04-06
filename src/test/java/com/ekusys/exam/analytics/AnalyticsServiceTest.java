@@ -2,24 +2,31 @@ package com.ekusys.exam.analytics;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ekusys.exam.analytics.dto.ExamOverviewItem;
 import com.ekusys.exam.analytics.dto.WrongTopicItem;
+import com.ekusys.exam.common.exception.BusinessException;
+import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.analytics.service.AnalyticsService;
+import com.ekusys.exam.exam.service.ExamPermissionService;
 import com.ekusys.exam.repository.entity.Exam;
 import com.ekusys.exam.repository.entity.Question;
 import com.ekusys.exam.repository.entity.Submission;
 import com.ekusys.exam.repository.entity.SubmissionAnswer;
 import com.ekusys.exam.repository.mapper.ExamMapper;
+import com.ekusys.exam.repository.mapper.ExamTargetClassMapper;
 import com.ekusys.exam.repository.mapper.PaperMapper;
 import com.ekusys.exam.repository.mapper.QuestionMapper;
 import com.ekusys.exam.repository.mapper.StudentTeachingClassMapper;
 import com.ekusys.exam.repository.mapper.SubmissionAnswerMapper;
 import com.ekusys.exam.repository.mapper.SubmissionMapper;
 import com.ekusys.exam.repository.mapper.TeachingClassMapper;
+import com.ekusys.exam.repository.mapper.UserMapper;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,6 +47,9 @@ class AnalyticsServiceTest {
     private ExamMapper examMapper;
 
     @Mock
+    private ExamTargetClassMapper examTargetClassMapper;
+
+    @Mock
     private PaperMapper paperMapper;
 
     @Mock
@@ -51,10 +61,14 @@ class AnalyticsServiceTest {
     @Mock
     private QuestionMapper questionMapper;
 
+    @Mock
+    private UserMapper userMapper;
+
     private AnalyticsService analyticsService;
 
     @BeforeEach
     void setUp() {
+        when(userMapper.selectRoleCodes(any())).thenReturn(List.of("TEACHER"));
         analyticsService = new AnalyticsService(
             submissionMapper,
             submissionAnswerMapper,
@@ -62,7 +76,8 @@ class AnalyticsServiceTest {
             paperMapper,
             studentTeachingClassMapper,
             teachingClassMapper,
-            questionMapper
+            questionMapper,
+            new ExamPermissionService(userMapper, examTargetClassMapper, teachingClassMapper)
         );
     }
 
@@ -71,6 +86,7 @@ class AnalyticsServiceTest {
         Exam exam = new Exam();
         exam.setId(100L);
         exam.setPassScore(60);
+        exam.setPublisherId(200L);
         when(examMapper.selectById(100L)).thenReturn(exam);
 
         when(submissionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
@@ -80,21 +96,32 @@ class AnalyticsServiceTest {
             submission(4L, null)
         ));
 
-        ExamOverviewItem overview = analyticsService.overview(100L);
+        try (var mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+            ExamOverviewItem overview = analyticsService.overview(100L);
 
-        assertEquals(4, overview.getTotalStudents());
-        assertEquals(2, overview.getPassCount());
-        assertEquals(50.0, overview.getPassRate());
-        assertEquals(51.25, overview.getAvgScore());
-        assertEquals(90, overview.getMaxScore());
-        assertEquals(0, overview.getMinScore());
+            assertEquals(4, overview.getTotalStudents());
+            assertEquals(2, overview.getPassCount());
+            assertEquals(50.0, overview.getPassRate());
+            assertEquals(51.25, overview.getAvgScore());
+            assertEquals(90, overview.getMaxScore());
+            assertEquals(0, overview.getMinScore());
+        }
     }
 
     @Test
     void overviewShouldReturnEmptyMetricsWhenNoSubmission() {
+        Exam exam = new Exam();
+        exam.setId(100L);
+        exam.setPublisherId(200L);
+        when(examMapper.selectById(100L)).thenReturn(exam);
         when(submissionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
-        ExamOverviewItem overview = analyticsService.overview(100L);
+        ExamOverviewItem overview;
+        try (var mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+            overview = analyticsService.overview(100L);
+        }
 
         assertEquals(0, overview.getTotalStudents());
         assertEquals(0, overview.getPassCount());
@@ -106,6 +133,10 @@ class AnalyticsServiceTest {
 
     @Test
     void wrongTopicsShouldSortByWrongRateAndRespectTopN() {
+        Exam exam = new Exam();
+        exam.setId(100L);
+        exam.setPublisherId(200L);
+        when(examMapper.selectById(100L)).thenReturn(exam);
         when(submissionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
             submission(1L, 60),
             submission(2L, 70)
@@ -124,7 +155,11 @@ class AnalyticsServiceTest {
             question(30L, "Q30")
         ));
 
-        List<WrongTopicItem> items = analyticsService.wrongTopics(100L, 2);
+        List<WrongTopicItem> items;
+        try (var mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+            items = analyticsService.wrongTopics(100L, 2);
+        }
 
         assertEquals(2, items.size());
         assertEquals(10L, items.get(0).getQuestionId());
@@ -135,6 +170,10 @@ class AnalyticsServiceTest {
 
     @Test
     void wrongTopicsShouldClampTopNToMinimum() {
+        Exam exam = new Exam();
+        exam.setId(100L);
+        exam.setPublisherId(200L);
+        when(examMapper.selectById(100L)).thenReturn(exam);
         when(submissionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
             submission(1L, 60),
             submission(2L, 70)
@@ -150,10 +189,28 @@ class AnalyticsServiceTest {
             question(20L, "Q20")
         ));
 
-        List<WrongTopicItem> items = analyticsService.wrongTopics(100L, 0);
+        List<WrongTopicItem> items;
+        try (var mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+            items = analyticsService.wrongTopics(100L, 0);
+        }
 
         assertEquals(1, items.size());
         assertEquals(10L, items.get(0).getQuestionId());
+    }
+
+    @Test
+    void overviewShouldRejectUnauthorizedTeacher() {
+        Exam exam = new Exam();
+        exam.setId(100L);
+        exam.setPublisherId(999L);
+        when(examMapper.selectById(100L)).thenReturn(exam);
+        when(examTargetClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+
+        try (var mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+            assertThrows(BusinessException.class, () -> analyticsService.overview(100L));
+        }
     }
 
     private Submission submission(Long id, Integer totalScore) {

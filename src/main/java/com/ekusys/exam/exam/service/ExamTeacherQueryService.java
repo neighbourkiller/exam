@@ -31,23 +31,27 @@ public class ExamTeacherQueryService {
     private final UserMapper userMapper;
     private final ExamAccessService examAccessService;
     private final ExamStatusService examStatusService;
+    private final ExamPermissionService examPermissionService;
 
     public ExamTeacherQueryService(ExamMapper examMapper,
                                    TeachingClassMapper teachingClassMapper,
                                    SubjectMapper subjectMapper,
                                    UserMapper userMapper,
                                    ExamAccessService examAccessService,
-                                   ExamStatusService examStatusService) {
+                                   ExamStatusService examStatusService,
+                                   ExamPermissionService examPermissionService) {
         this.examMapper = examMapper;
         this.teachingClassMapper = teachingClassMapper;
         this.subjectMapper = subjectMapper;
         this.userMapper = userMapper;
         this.examAccessService = examAccessService;
         this.examStatusService = examStatusService;
+        this.examPermissionService = examPermissionService;
     }
 
     public List<TeacherExamView> listTeacherExams() {
         List<Exam> exams = examMapper.selectList(new LambdaQueryWrapper<Exam>().orderByDesc(Exam::getCreateTime));
+        exams = examPermissionService.filterManageableExams(exams);
         LocalDateTime now = LocalDateTime.now();
         exams.forEach(item -> examStatusService.refreshExamStatusByTime(item, now));
         return exams.stream().map(exam -> TeacherExamView.builder()

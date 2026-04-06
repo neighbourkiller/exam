@@ -196,13 +196,15 @@ CREATE TABLE IF NOT EXISTS exam_session (
     student_id BIGINT NOT NULL,
     status VARCHAR(16) NOT NULL,
     start_time DATETIME,
+    deadline_time DATETIME,
     end_time DATETIME,
     last_snapshot_time DATETIME,
     create_time DATETIME,
     update_time DATETIME,
     create_by BIGINT,
     update_by BIGINT,
-    UNIQUE KEY uk_exam_student_session (exam_id, student_id)
+    UNIQUE KEY uk_exam_student_session (exam_id, student_id),
+    KEY idx_exam_session_status_deadline (status, deadline_time)
 );
 
 CREATE TABLE IF NOT EXISTS submission (

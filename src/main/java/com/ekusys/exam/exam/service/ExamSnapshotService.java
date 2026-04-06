@@ -18,6 +18,7 @@ import com.ekusys.exam.repository.mapper.SubmissionMapper;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -86,6 +87,20 @@ public class ExamSnapshotService {
     }
 
     public Map<Long, String> loadSnapshotAnswerMap(Long examId, Long studentId) {
+        Map<Long, String> persisted = loadPersistedDraftAnswerMap(examId, studentId);
+        Map<Long, String> snapshot = loadRedisSnapshotAnswerMap(examId, studentId);
+        if (persisted.isEmpty()) {
+            return snapshot;
+        }
+        if (snapshot.isEmpty()) {
+            return persisted;
+        }
+        Map<Long, String> merged = new LinkedHashMap<>(persisted);
+        merged.putAll(snapshot);
+        return merged;
+    }
+
+    private Map<Long, String> loadRedisSnapshotAnswerMap(Long examId, Long studentId) {
         String value = redisTemplate.opsForValue().get(snapshotKey(examId, studentId));
         if (value == null || value.isBlank()) {
             return Map.of();
@@ -106,6 +121,29 @@ public class ExamSnapshotService {
             log.warn("Failed to parse snapshot payload: examId={}, studentId={}", examId, studentId, ex);
             return Map.of();
         }
+    }
+
+    public Map<Long, String> loadPersistedDraftAnswerMap(Long examId, Long studentId) {
+        Submission submission = submissionMapper.selectOne(new LambdaQueryWrapper<Submission>()
+            .eq(Submission::getExamId, examId)
+            .eq(Submission::getStudentId, studentId)
+            .eq(Submission::getStatus, SubmissionStatus.IN_PROGRESS.name())
+            .last("limit 1"));
+        if (submission == null) {
+            return Map.of();
+        }
+        return submissionAnswerMapper.selectList(new LambdaQueryWrapper<SubmissionAnswer>()
+            .eq(SubmissionAnswer::getSubmissionId, submission.getId())
+            .eq(SubmissionAnswer::getFinalAnswer, false)
+            .orderByAsc(SubmissionAnswer::getId))
+            .stream()
+            .filter(item -> item.getQuestionId() != null)
+            .collect(java.util.stream.Collectors.toMap(
+                SubmissionAnswer::getQuestionId,
+                item -> item.getAnswerText() == null ? "" : item.getAnswerText(),
+                (a, b) -> b,
+                LinkedHashMap::new
+            ));
     }
 
     public void clearSnapshot(Long examId, Long studentId) {
