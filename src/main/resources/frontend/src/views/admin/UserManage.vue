@@ -146,7 +146,7 @@ const editForm = reactive({
 const form = reactive({
   username: '',
   realName: '',
-  password: '123456',
+  password: '',
   roleIds: [],
   studentNo: '',
   teachingClassIds: []
@@ -219,7 +219,7 @@ const create = async () => {
   ElMessage.success('创建成功')
   form.username = ''
   form.realName = ''
-  form.password = '123456'
+  form.password = ''
   form.roleIds = []
   form.studentNo = ''
   form.teachingClassIds = []
@@ -265,8 +265,14 @@ const del = async (id) => {
 }
 
 const reset = async (row) => {
-  await resetPasswordApi(row.id, { password: '123456' })
-  ElMessage.success(`已将 ${row.username} 密码重置为 123456`)
+  const { value } = await ElMessageBox.prompt(`请输入 ${row.username} 的新密码`, '重置密码', {
+    inputType: 'password',
+    inputPlaceholder: '请输入新密码',
+    confirmButtonText: '确认',
+    cancelButtonText: '取消'
+  })
+  await resetPasswordApi(row.id, { password: value })
+  ElMessage.success(`已更新 ${row.username} 的密码`)
 }
 
 const createRole = async () => {

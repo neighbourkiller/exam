@@ -40,6 +40,8 @@ src/main/resources/frontend/*.log
 
 # Local AI/tooling cache
 .codex/
+.env
+.env.local
 
 .github/
 # Claude

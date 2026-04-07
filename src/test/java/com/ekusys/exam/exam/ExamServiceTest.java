@@ -24,6 +24,7 @@ import com.ekusys.exam.exam.service.ExamStudentQueryService;
 import com.ekusys.exam.exam.service.ExamSubmissionService;
 import com.ekusys.exam.exam.service.ExamTeacherQueryService;
 import com.ekusys.exam.repository.entity.Exam;
+import com.ekusys.exam.repository.entity.ExamSession;
 import com.ekusys.exam.repository.entity.PaperQuestion;
 import com.ekusys.exam.repository.entity.Question;
 import com.ekusys.exam.repository.entity.QuestionAsset;
@@ -164,7 +165,8 @@ class ExamServiceTest {
                 accessService,
                 statusService,
                 sessionService,
-                questionAssembler
+                questionAssembler,
+                snapshotService
             ),
             snapshotService,
             new ExamAntiCheatWriteService(accessService, antiCheatEventMapper),
@@ -228,6 +230,49 @@ class ExamServiceTest {
             assertEquals("http://example.com/question-11.png", response.getQuestions().get(0).getAssets().get(0).getUrl());
             assertNotNull(response.getDeadlineTime());
             assertEquals(exam.getEndTime().withNano(0), response.getDeadlineTime().withNano(0));
+        }
+    }
+
+    @Test
+    void startExamShouldExposeResumeMetadata() {
+        Exam exam = new Exam();
+        exam.setId(3002L);
+        exam.setPaperId(7002L);
+        exam.setName("数据库期中");
+        exam.setStatus("ONGOING");
+        exam.setDurationMinutes(90);
+        exam.setStartTime(LocalDateTime.now().minusMinutes(30));
+        exam.setEndTime(LocalDateTime.now().plusMinutes(60));
+        when(examMapper.selectById(3002L)).thenReturn(exam);
+
+        StudentTeachingClass relation = new StudentTeachingClass();
+        relation.setTeachingClassId(9002L);
+        when(studentTeachingClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(relation));
+        when(examTargetClassMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(1L);
+
+        ExamSession session = new ExamSession();
+        session.setId(12L);
+        session.setExamId(3002L);
+        session.setStudentId(1002L);
+        session.setStatus("ANSWERING");
+        session.setStartTime(LocalDateTime.now().minusMinutes(20));
+        session.setDeadlineTime(LocalDateTime.now().plusMinutes(40));
+        session.setLastSnapshotTime(LocalDateTime.of(2026, 4, 7, 11, 20, 0));
+        when(examSessionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(session);
+
+        when(submissionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(paperQuestionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("exam:snapshot:3002:1002")).thenReturn(null);
+
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(1002L);
+
+            StartExamResponse response = examService.startExam(3002L);
+
+            assertNotNull(response);
+            assertEquals(Boolean.TRUE, response.getResumed());
+            assertEquals(session.getLastSnapshotTime(), response.getDraftUpdatedAt());
         }
     }
 }

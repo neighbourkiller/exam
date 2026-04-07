@@ -109,4 +109,17 @@ class UserAdminServiceTest {
         verify(userProfileSyncService).syncStudentNo(1001L, "S002");
         verify(userProfileSyncService).updateStudentTeachingClasses(1001L, List.of(3302L), List.of("STUDENT"));
     }
+    @Test
+    void createUserShouldRequirePasswordWhenDefaultPasswordNotConfigured() {
+        ReflectionTestUtils.setField(userAdminService, "defaultPassword", "");
+        when(userMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+
+        UserCreateRequest request = new UserCreateRequest();
+        request.setUsername("bob");
+        request.setRealName("Bob");
+        request.setRoleIds(List.of(1L));
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> userAdminService.createUser(request));
+        assertEquals("请填写密码或配置 APP_DEFAULT_PASSWORD", ex.getMessage());
+    }
 }

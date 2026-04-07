@@ -4,7 +4,7 @@ spring:
   datasource:
     url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/exam_mvp?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
     username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:962464}
+    password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:
@@ -12,12 +12,11 @@ spring:
       port: ${REDIS_PORT:6379}
       database: ${REDIS_DATABASE:0}
       timeout: ${REDIS_TIMEOUT:3s}
-      # password: ${REDIS_PASSWORD:962464}
   rabbitmq:
     host: ${RABBITMQ_HOST:127.0.0.1}
     port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
+    username: ${RABBITMQ_USERNAME:}
+    password: ${RABBITMQ_PASSWORD:}
     virtual-host: ${RABBITMQ_VHOST:/}
   jackson:
     default-property-inclusion: non_null
@@ -43,7 +42,7 @@ server:
 
 jwt:
   issuer: ${JWT_ISSUER:exam-system}
-  secret: ${JWT_SECRET:change-this-secret-to-a-long-random-string-in-production}
+  secret: ${JWT_SECRET:}
   access-token-expire-minutes: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:120}
   refresh-token-expire-days: ${JWT_REFRESH_TOKEN_EXPIRE_DAYS:7}
 
@@ -78,12 +77,12 @@ app:
       dlx: ${APP_RABBIT_EXAM_SUBMISSION_DLX:exam.submission.dlx}
       dlq: ${APP_RABBIT_EXAM_SUBMISSION_DLQ:exam.submission.process.dlq}
   security:
-    default-password: ${APP_DEFAULT_PASSWORD:123456}
+    default-password: ${APP_DEFAULT_PASSWORD:}
   minio:
     endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
     public-endpoint: ${MINIO_PUBLIC_ENDPOINT:http://127.0.0.1:9000}
-    access-key: ${MINIO_ACCESS_KEY:admin}
-    secret-key: ${MINIO_SECRET_KEY:password123}
+    access-key: ${MINIO_ACCESS_KEY:}
+    secret-key: ${MINIO_SECRET_KEY:}
     bucket: ${MINIO_BUCKET:question-images}
     public-read: ${MINIO_PUBLIC_READ:true}
   asset-cleanup:

@@ -51,6 +51,7 @@ const applyAuthPayload = (payload) => {
   }
   auth.setAuth({
     ...payload,
+    userId: auth.userId,
     username: auth.username
   })
 }
@@ -92,7 +93,7 @@ export const refreshAccessToken = async () => {
 export const restoreSession = async () => {
   const auth = getAuthStore()
   if (auth?.isLogin) {
-    if (!auth.username) {
+    if (!auth.username || !auth.userId) {
       try {
         await loadCurrentUserProfile()
       } catch {
@@ -104,7 +105,7 @@ export const restoreSession = async () => {
 
   try {
     await refreshAccessToken()
-    if (auth && !auth.username) {
+    if (auth && (!auth.username || !auth.userId)) {
       try {
         await loadCurrentUserProfile()
       } catch {

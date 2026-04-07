@@ -28,7 +28,7 @@ public class UserAdminService {
     private final RoleAdminService roleAdminService;
     private final UserProfileSyncService userProfileSyncService;
 
-    @Value("${app.security.default-password:123456}")
+    @Value("${app.security.default-password:}")
     private String defaultPassword;
 
     public UserAdminService(UserMapper userMapper,
@@ -93,8 +93,8 @@ public class UserAdminService {
         user.setUsername(request.getUsername());
         user.setRealName(request.getRealName());
         user.setEnabled(true);
-        user.setPassword(passwordEncoder.encode(request.getPassword() == null || request.getPassword().isBlank()
-            ? defaultPassword : request.getPassword()));
+        String rawPassword = resolvePassword(request.getPassword());
+        user.setPassword(passwordEncoder.encode(rawPassword));
         userMapper.insert(user);
 
         roleAdminService.assignRoles(user.getId(), request.getRoleIds(), request.getTeachingClassIds());
@@ -144,5 +144,15 @@ public class UserAdminService {
             throw new BusinessException("用户不存在");
         }
         return user;
+    }
+
+    private String resolvePassword(String password) {
+        if (password != null && !password.isBlank()) {
+            return password;
+        }
+        if (defaultPassword != null && !defaultPassword.isBlank()) {
+            return defaultPassword;
+        }
+        throw new BusinessException("请填写密码或配置 APP_DEFAULT_PASSWORD");
     }
 }

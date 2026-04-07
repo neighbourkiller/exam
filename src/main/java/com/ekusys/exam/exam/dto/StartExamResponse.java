@@ -11,9 +11,11 @@ public class StartExamResponse {
 
     private Long examId;
     private String examName;
+    private Boolean resumed;
     private Integer durationMinutes;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private LocalDateTime deadlineTime;
+    private LocalDateTime draftUpdatedAt;
     private List<StudentExamQuestionView> questions;
 }

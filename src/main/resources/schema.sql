@@ -271,3 +271,26 @@ CREATE TABLE IF NOT EXISTS anti_cheat_event (
     KEY idx_anti_cheat_event_exam_time (exam_id, event_time),
     KEY idx_anti_cheat_event_exam_student_time (exam_id, student_id, event_time)
 );
+
+CREATE TABLE IF NOT EXISTS operation_audit_log (
+    id BIGINT PRIMARY KEY,
+    operator_id BIGINT,
+    operator_username VARCHAR(128),
+    operator_roles VARCHAR(255),
+    action VARCHAR(64) NOT NULL,
+    target_type VARCHAR(64) NOT NULL,
+    target_id VARCHAR(128),
+    request_method VARCHAR(16),
+    request_path VARCHAR(255),
+    request_ip VARCHAR(64),
+    detail TEXT,
+    status VARCHAR(16) NOT NULL,
+    error_message VARCHAR(500),
+    operate_time DATETIME NOT NULL,
+    create_time DATETIME,
+    update_time DATETIME,
+    create_by BIGINT,
+    update_by BIGINT,
+    KEY idx_operation_audit_log_operator_time (operator_id, operate_time),
+    KEY idx_operation_audit_log_action_time (action, operate_time)
+);

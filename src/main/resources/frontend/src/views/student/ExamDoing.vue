@@ -135,14 +135,17 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { antiCheatApi, snapshotApi, startExamApi, submitExamApi } from '../../api'
+import { useAuthStore } from '../../stores/auth'
+import { clearDraft, loadDraft, saveDraft } from '../../utils/examDraftStore'
 import { parseDateTime } from '../../utils/datetime'
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
 const examId = String(route.params.id || '')
 
 const state = reactive({
@@ -171,7 +174,16 @@ const typeLabelMap = {
 let timer = null
 let snapshotTimer = null
 let bannerResetTimer = null
+let draftSaveTimer = null
 const recentEventTimes = new Map()
+const syncState = reactive({
+  userId: null,
+  initialized: false,
+  dirty: false,
+  syncing: false,
+  updatedAt: 0,
+  lastSyncedAt: null
+})
 
 const answeredCount = computed(() =>
   state.questions.filter((q) => isQuestionAnswered(q)).length
@@ -243,6 +255,24 @@ const questionImages = (question) =>
     ? question.assets.filter(isImageAsset)
     : []
 
+const toStoredQuestionId = (questionId) => String(questionId)
+
+const normalizeAnswerInputValue = (question, value) => {
+  if (question?.type === 'MULTI') {
+    if (Array.isArray(value)) {
+      return value.map((item) => String(item)).filter((item) => item)
+    }
+    if (typeof value === 'string' && value) {
+      return value.split(',').map((item) => item.trim()).filter((item) => item)
+    }
+    return []
+  }
+  if (value == null) {
+    return ''
+  }
+  return String(value)
+}
+
 const isQuestionAnswered = (question) => {
   const value = answers[question.questionId]
   if (Array.isArray(value)) {
@@ -266,6 +296,45 @@ const normalizeAnswer = (q) => {
   return val || ''
 }
 
+const buildAnswerMapFromState = () => {
+  const map = {}
+  state.questions.forEach((question) => {
+    map[toStoredQuestionId(question.questionId)] = normalizeAnswerInputValue(question, answers[question.questionId])
+  })
+  return map
+}
+
+const buildAnswerMapFromQuestions = (questions = []) => {
+  const map = {}
+  questions.forEach((question) => {
+    map[toStoredQuestionId(question.questionId)] = normalizeAnswerInputValue(question, question.currentAnswer)
+  })
+  return map
+}
+
+const applyAnswerMap = (answerMap = {}) => {
+  state.questions.forEach((question) => {
+    const rawValue = answerMap?.[question.questionId] ?? answerMap?.[toStoredQuestionId(question.questionId)]
+    answers[question.questionId] = normalizeAnswerInputValue(question, rawValue)
+  })
+}
+
+const buildSubmitPayload = () => ({
+  answers: state.questions.map((q) => ({
+    questionId: q.questionId,
+    answerText: normalizeAnswer(q)
+  }))
+})
+
+const hasDraftContent = (answerMap = {}) =>
+  state.questions.some((question) => {
+    const value = answerMap?.[question.questionId] ?? answerMap?.[toStoredQuestionId(question.questionId)]
+    if (Array.isArray(value)) {
+      return value.length > 0
+    }
+    return String(value || '').trim().length > 0
+  })
+
 const resetBanner = () => {
   bannerState.type = 'warning'
   bannerState.title = '考试页面处于监考模式'
@@ -286,6 +355,22 @@ const showBanner = (type, title, description, sticky = false) => {
       bannerResetTimer = null
     }, 8000)
   }
+}
+
+const showRecoveryBanner = (mode) => {
+  if (mode === 'local') {
+    showBanner('success', '已恢复本地草稿', '检测到本机保存的较新答题进度，系统已优先恢复，并会在联网后自动同步。')
+    return
+  }
+  if (mode === 'server') {
+    showBanner('success', '已恢复服务端草稿', '检测到服务器上的答题进度，系统已自动恢复到你上次保存的位置。')
+    return
+  }
+  if (mode === 'resumed') {
+    showBanner('info', '已恢复考试会话', '你之前已经进入过本场考试，当前会话已继续，可直接接着作答。')
+    return
+  }
+  showBanner('info', '已开始答题', '本地草稿保存已开启。网络中断时会继续在本机保存，恢复网络后自动同步。')
 }
 
 const formatDuration = (durationMs) => {
@@ -401,28 +486,117 @@ const syncCountdown = () => {
   secondsLeft.value = Math.max(0, Math.floor((examEndAt.value.getTime() - Date.now()) / 1000))
 }
 
-const sendSnapshot = async () => {
-  const payload = {
-    answers: state.questions.map((q) => ({
-      questionId: q.questionId,
-      answerText: normalizeAnswer(q)
-    })),
-    clientTimestamp: Date.now()
+const persistDraftState = async ({
+  updatedAt = Date.now(),
+  lastSyncedAt = syncState.lastSyncedAt,
+  dirty = true,
+  answersMap = buildAnswerMapFromState()
+} = {}) => {
+  if (!syncState.userId) {
+    return null
   }
-  await snapshotApi(examId, payload)
+  syncState.updatedAt = updatedAt
+  syncState.lastSyncedAt = lastSyncedAt ?? null
+  syncState.dirty = Boolean(dirty)
+  return saveDraft({
+    userId: syncState.userId,
+    examId,
+    answers: answersMap,
+    updatedAt: syncState.updatedAt,
+    lastSyncedAt: syncState.lastSyncedAt,
+    dirty: syncState.dirty
+  })
+}
+
+const scheduleDraftSave = () => {
+  if (!syncState.userId) {
+    return
+  }
+  if (draftSaveTimer) {
+    clearTimeout(draftSaveTimer)
+  }
+  draftSaveTimer = setTimeout(() => {
+    draftSaveTimer = null
+    void persistDraftState({
+      updatedAt: Date.now(),
+      lastSyncedAt: syncState.lastSyncedAt,
+      dirty: true
+    })
+  }, 400)
+}
+
+const flushDraftSave = () => {
+  if (!draftSaveTimer) {
+    return
+  }
+  clearTimeout(draftSaveTimer)
+  draftSaveTimer = null
+  void persistDraftState({
+    updatedAt: Date.now(),
+    lastSyncedAt: syncState.lastSyncedAt,
+    dirty: true
+  })
+}
+
+const syncDirtyDraft = async ({ force = false, notify = false } = {}) => {
+  if (!syncState.userId || !syncState.initialized || syncState.syncing) {
+    return false
+  }
+  if (!navigator.onLine) {
+    return false
+  }
+  if (!force && !syncState.dirty) {
+    return false
+  }
+
+  syncState.syncing = true
+  const syncVersion = syncState.updatedAt || Date.now()
+  try {
+    await snapshotApi(examId, {
+      ...buildSubmitPayload(),
+      clientTimestamp: syncVersion
+    })
+
+    const latestUpdatedAt = syncState.updatedAt || syncVersion
+    await persistDraftState({
+      updatedAt: latestUpdatedAt,
+      lastSyncedAt: syncVersion,
+      dirty: latestUpdatedAt > syncVersion
+    })
+
+    if (notify) {
+      ElMessage.success('答题进度已同步到服务器')
+    }
+    return true
+  } catch {
+    return false
+  } finally {
+    syncState.syncing = false
+  }
 }
 
 const submit = async (needConfirm = true) => {
+  if (!navigator.onLine) {
+    await persistDraftState({
+      updatedAt: Date.now(),
+      lastSyncedAt: syncState.lastSyncedAt,
+      dirty: true
+    })
+    ElMessage.warning('当前网络已断开，答案已保存在本地草稿。请恢复网络后再交卷。')
+    return
+  }
   if (needConfirm) {
     await ElMessageBox.confirm('确认提交试卷？提交后不可修改。', '提示')
   }
-  const payload = {
-    answers: state.questions.map((q) => ({
-      questionId: q.questionId,
-      answerText: normalizeAnswer(q)
-    }))
+  await submitExamApi(examId, buildSubmitPayload())
+  if (draftSaveTimer) {
+    clearTimeout(draftSaveTimer)
+    draftSaveTimer = null
   }
-  await submitExamApi(examId, payload)
+  if (syncState.userId) {
+    await clearDraft(syncState.userId, examId)
+  }
+  syncState.dirty = false
   try {
     await ElMessageBox.confirm('试卷已提交，系统正在处理成绩。是否前往考试结果中心查看成绩状态？', '提交成功', {
       confirmButtonText: '查看考试结果',
@@ -520,17 +694,57 @@ const onOnline = () => {
   const durationMs = Date.now() - offlineStartedAt.value
   offlineStartedAt.value = null
   reportAntiCheatEvent('NETWORK_OFFLINE', durationMs, { recovered: true })
+  const shouldNotify = syncState.dirty
+  void syncDirtyDraft({ force: shouldNotify, notify: shouldNotify })
 }
 
-onMounted(async () => {
+const onBeforeUnload = () => {
+  flushDraftSave()
+}
+
+const bootstrapExam = async () => {
   const data = await startExamApi(examId)
-  Object.assign(state, data)
-  state.questions.forEach((q) => {
-    answers[q.questionId] = q.currentAnswer || (q.type === 'MULTI' ? [] : '')
-    if (q.type === 'MULTI' && typeof answers[q.questionId] === 'string' && answers[q.questionId]) {
-      answers[q.questionId] = answers[q.questionId].split(',').filter((item) => item)
-    }
+  state.examId = String(data?.examId || examId)
+  state.examName = data?.examName || ''
+  state.questions = Array.isArray(data?.questions) ? data.questions : []
+
+  syncState.userId = auth.userId == null ? null : String(auth.userId)
+  syncState.initialized = false
+
+  const serverAnswerMap = buildAnswerMapFromQuestions(state.questions)
+  const serverDraftTime = parseDateTime(data?.draftUpdatedAt)?.getTime() || 0
+  const hasServerDraft = serverDraftTime > 0 || hasDraftContent(serverAnswerMap)
+  const localDraft = syncState.userId ? await loadDraft(syncState.userId, examId) : null
+
+  let selectedAnswers = serverAnswerMap
+  let selectedMode = 'new'
+  let draftUpdatedAt = serverDraftTime || Date.now()
+  let lastSyncedAt = serverDraftTime || Date.now()
+  let dirty = false
+
+  if (localDraft && Number(localDraft.updatedAt || 0) > serverDraftTime) {
+    selectedAnswers = localDraft.answers || {}
+    selectedMode = 'local'
+    draftUpdatedAt = Number(localDraft.updatedAt) || Date.now()
+    lastSyncedAt = Number(localDraft.lastSyncedAt || 0) || null
+    dirty = Boolean(localDraft.dirty) || !lastSyncedAt || draftUpdatedAt > lastSyncedAt
+  } else if (hasServerDraft) {
+    selectedMode = 'server'
+    draftUpdatedAt = serverDraftTime || Date.now()
+    lastSyncedAt = serverDraftTime || Date.now()
+  } else if (data?.resumed) {
+    selectedMode = 'resumed'
+    draftUpdatedAt = Date.now()
+    lastSyncedAt = Date.now()
+  }
+
+  applyAnswerMap(selectedAnswers)
+  await persistDraftState({
+    updatedAt: draftUpdatedAt,
+    lastSyncedAt,
+    dirty
   })
+  syncState.initialized = true
 
   examEndAt.value = resolveExamEndTime(data)
   syncCountdown()
@@ -542,28 +756,49 @@ onMounted(async () => {
     }
   }, 1000)
 
-  snapshotTimer = setInterval(sendSnapshot, 15000)
+  snapshotTimer = setInterval(() => {
+    void syncDirtyDraft()
+  }, 15000)
   window.addEventListener('blur', onBlur)
   window.addEventListener('focus', onFocus)
   window.addEventListener('offline', onOffline)
   window.addEventListener('online', onOnline)
+  window.addEventListener('beforeunload', onBeforeUnload)
   document.addEventListener('visibilitychange', onVisibility)
   document.addEventListener('fullscreenchange', onFullscreenChange)
   document.addEventListener('copy', onCopy)
   document.addEventListener('paste', onPaste)
   document.addEventListener('cut', onCut)
   document.addEventListener('contextmenu', onContextMenu)
+
+  showRecoveryBanner(selectedMode)
+  if (selectedMode === 'local' && navigator.onLine) {
+    void syncDirtyDraft({ force: true })
+  }
   await tryEnterFullscreen()
+}
+
+watch(answers, () => {
+  if (!syncState.initialized || !state.questions.length) {
+    return
+  }
+  scheduleDraftSave()
+}, { deep: true })
+
+onMounted(async () => {
+  await bootstrapExam()
 })
 
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
   if (snapshotTimer) clearInterval(snapshotTimer)
   if (bannerResetTimer) clearTimeout(bannerResetTimer)
+  flushDraftSave()
   window.removeEventListener('blur', onBlur)
   window.removeEventListener('focus', onFocus)
   window.removeEventListener('offline', onOffline)
   window.removeEventListener('online', onOnline)
+  window.removeEventListener('beforeunload', onBeforeUnload)
   document.removeEventListener('visibilitychange', onVisibility)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   document.removeEventListener('copy', onCopy)

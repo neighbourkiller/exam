@@ -98,7 +98,7 @@
             </div>
           </el-form>
 
-          <div class="quick-login">
+          <div v-if="accountHints.length" class="quick-login">
             <span class="divider-text">测试账号快捷登录</span>
             <div class="account-hints">
               <button
@@ -128,21 +128,22 @@ import { useAuthStore } from '../../stores/auth'
 const router = useRouter()
 const auth = useAuthStore()
 const loading = ref(false)
+const isDev = import.meta.env.DEV
 
 const form = reactive({
-  username: 'admin',
-  password: '123456'
+  username: '',
+  password: ''
 })
 
-const accountHints = [
-  { label: '管理员', username: 'admin', password: '123456' },
-  { label: '教师', username: 'teacher1', password: '123456' },
-  { label: '学生', username: 'student1', password: '123456' }
-]
+const accountHints = isDev ? [
+  { label: '管理员', username: 'admin' },
+  { label: '教师', username: 'teacher1' },
+  { label: '学生', username: 'student1' }
+] : []
 
 const fillAccount = (account) => {
   form.username = account.username
-  form.password = account.password
+  form.password = ''
 }
 
 const onSubmit = async () => {

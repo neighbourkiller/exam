@@ -13,9 +13,11 @@ import com.ekusys.exam.repository.entity.Submission;
 import com.ekusys.exam.repository.entity.SubmissionAnswer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import com.ekusys.exam.repository.mapper.SubmissionAnswerMapper;
 import com.ekusys.exam.repository.mapper.SubmissionMapper;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -67,6 +69,7 @@ public class ExamSnapshotService {
 
         ExamSession session = examSessionService.requireActiveSession(examId, studentId);
         LocalDateTime now = LocalDateTime.now();
+        LocalDateTime snapshotTime = resolveSnapshotTime(request.getClientTimestamp(), now);
         Map<String, Object> payload = new HashMap<>();
         payload.put("examId", examId);
         payload.put("studentId", studentId);
@@ -83,7 +86,7 @@ public class ExamSnapshotService {
             throw new BusinessException("快照序列化失败");
         }
 
-        examSessionService.touchSnapshot(session, now);
+        examSessionService.touchSnapshot(session, snapshotTime);
     }
 
     public Map<Long, String> loadSnapshotAnswerMap(Long examId, Long studentId) {
@@ -144,6 +147,29 @@ public class ExamSnapshotService {
                 (a, b) -> b,
                 LinkedHashMap::new
             ));
+    }
+
+    public LocalDateTime resolveDraftUpdatedAt(Long examId, Long studentId) {
+        ExamSession session = examSessionService.findLatestSession(examId, studentId);
+        if (session != null && session.getLastSnapshotTime() != null) {
+            return session.getLastSnapshotTime();
+        }
+
+        Submission submission = submissionMapper.selectOne(new LambdaQueryWrapper<Submission>()
+            .eq(Submission::getExamId, examId)
+            .eq(Submission::getStudentId, studentId)
+            .eq(Submission::getStatus, SubmissionStatus.IN_PROGRESS.name())
+            .last("limit 1"));
+        if (submission == null) {
+            return null;
+        }
+
+        SubmissionAnswer latestDraftAnswer = submissionAnswerMapper.selectOne(new LambdaQueryWrapper<SubmissionAnswer>()
+            .eq(SubmissionAnswer::getSubmissionId, submission.getId())
+            .eq(SubmissionAnswer::getFinalAnswer, false)
+            .orderByDesc(SubmissionAnswer::getUpdateTime, SubmissionAnswer::getId)
+            .last("limit 1"));
+        return latestDraftAnswer == null ? null : latestDraftAnswer.getUpdateTime();
     }
 
     public void clearSnapshot(Long examId, Long studentId) {
@@ -249,5 +275,17 @@ public class ExamSnapshotService {
 
     private String snapshotKey(Long examId, Long studentId) {
         return "exam:snapshot:" + examId + ":" + studentId;
+    }
+
+    private LocalDateTime resolveSnapshotTime(Long clientTimestamp, LocalDateTime fallbackTime) {
+        if (clientTimestamp == null || clientTimestamp <= 0) {
+            return fallbackTime;
+        }
+        try {
+            return LocalDateTime.ofInstant(Instant.ofEpochMilli(clientTimestamp), ZoneId.systemDefault());
+        } catch (Exception ex) {
+            log.warn("Invalid snapshot client timestamp: {}", clientTimestamp, ex);
+            return fallbackTime;
+        }
     }
 }

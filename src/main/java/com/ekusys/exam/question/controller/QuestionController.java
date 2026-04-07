@@ -1,6 +1,7 @@
 package com.ekusys.exam.question.controller;
 
 import com.ekusys.exam.common.api.ApiResponse;
+import com.ekusys.exam.common.audit.AuditOperation;
 import com.ekusys.exam.common.api.PageResponse;
 import com.ekusys.exam.question.dto.QuestionCreateRequest;
 import com.ekusys.exam.question.dto.QuestionImageUploadView;
@@ -57,6 +58,8 @@ public class QuestionController {
 
     @PostMapping
     @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
+    @AuditOperation(action = "QUESTION_CREATE", targetType = "QUESTION", targetId = "#result.data",
+        detail = "'subjectId=' + #request.subjectId + ',type=' + #request.type")
     public ApiResponse<Long> create(@Valid @RequestBody QuestionCreateRequest request) {
         return ApiResponse.ok("创建成功", questionService.create(request));
     }
@@ -70,6 +73,8 @@ public class QuestionController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
+    @AuditOperation(action = "QUESTION_UPDATE", targetType = "QUESTION", targetId = "#id",
+        detail = "'subjectId=' + #request.subjectId + ',type=' + #request.type")
     public ApiResponse<Void> update(@PathVariable Long id, @Valid @RequestBody QuestionUpdateRequest request) {
         questionService.update(id, request);
         return ApiResponse.ok("更新成功", null);
@@ -77,6 +82,7 @@ public class QuestionController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
+    @AuditOperation(action = "QUESTION_DELETE", targetType = "QUESTION", targetId = "#id")
     public ApiResponse<Void> delete(@PathVariable Long id) {
         questionService.delete(id);
         return ApiResponse.ok("删除成功", null);

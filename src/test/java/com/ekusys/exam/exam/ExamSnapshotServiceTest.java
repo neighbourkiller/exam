@@ -30,12 +30,15 @@ import com.ekusys.exam.repository.mapper.SubmissionAnswerMapper;
 import com.ekusys.exam.repository.mapper.SubmissionMapper;
 import com.ekusys.exam.repository.mapper.UserMapper;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -119,6 +122,7 @@ class ExamSnapshotServiceTest {
         payload.setQuestionId(11L);
         payload.setAnswerText("A");
         request.setAnswers(List.of(payload));
+        request.setClientTimestamp(1_744_021_234_000L);
 
         try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
             mocked.when(SecurityUtils::getCurrentUserId).thenReturn(100L);
@@ -129,6 +133,12 @@ class ExamSnapshotServiceTest {
             eq("exam:snapshot:1:100"),
             any(String.class),
             any(Duration.class)
+        );
+        ArgumentCaptor<ExamSession> sessionCaptor = ArgumentCaptor.forClass(ExamSession.class);
+        verify(examSessionMapper).updateById(sessionCaptor.capture());
+        assertEquals(
+            LocalDateTime.ofInstant(Instant.ofEpochMilli(request.getClientTimestamp()), ZoneId.systemDefault()),
+            sessionCaptor.getValue().getLastSnapshotTime()
         );
     }
 
@@ -175,6 +185,30 @@ class ExamSnapshotServiceTest {
         assertEquals(2, answerMap.size());
         assertEquals("C", answerMap.get(11L));
         assertEquals("B", answerMap.get(12L));
+    }
+
+    @Test
+    void resolveDraftUpdatedAtShouldFallbackToPersistedDraftAnswer() {
+        Submission submission = new Submission();
+        submission.setId(21L);
+        submission.setExamId(1L);
+        submission.setStudentId(100L);
+        submission.setStatus("IN_PROGRESS");
+
+        SubmissionAnswer latestAnswer = new SubmissionAnswer();
+        latestAnswer.setSubmissionId(21L);
+        latestAnswer.setQuestionId(11L);
+        latestAnswer.setAnswerText("B");
+        latestAnswer.setFinalAnswer(false);
+        latestAnswer.setUpdateTime(LocalDateTime.of(2026, 4, 7, 15, 20, 0));
+
+        when(examSessionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(submissionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(submission);
+        when(submissionAnswerMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(latestAnswer);
+
+        LocalDateTime draftUpdatedAt = snapshotService.resolveDraftUpdatedAt(1L, 100L);
+
+        assertEquals(latestAnswer.getUpdateTime(), draftUpdatedAt);
     }
 }
 

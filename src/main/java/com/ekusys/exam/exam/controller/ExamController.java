@@ -1,6 +1,7 @@
 package com.ekusys.exam.exam.controller;
 
 import com.ekusys.exam.common.api.ApiResponse;
+import com.ekusys.exam.common.audit.AuditOperation;
 import com.ekusys.exam.exam.dto.AntiCheatEventRequest;
 import com.ekusys.exam.exam.dto.ExamCreateRequest;
 import com.ekusys.exam.exam.dto.ProctoringOverviewView;
@@ -40,12 +41,14 @@ public class ExamController {
 
     @PostMapping
     @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
+    @AuditOperation(action = "EXAM_CREATE", targetType = "EXAM", targetId = "#result.data", detail = "#request.name")
     public ApiResponse<Long> createExam(@Valid @RequestBody ExamCreateRequest request) {
         return ApiResponse.ok("创建成功", examService.createExam(request));
     }
 
     @PostMapping("/{examId}/publish")
     @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
+    @AuditOperation(action = "EXAM_PUBLISH", targetType = "EXAM", targetId = "#examId")
     public ApiResponse<Void> publish(@PathVariable Long examId) {
         examService.publishExam(examId);
         return ApiResponse.ok("发布成功", null);
@@ -53,6 +56,7 @@ public class ExamController {
 
     @PostMapping("/{examId}/terminate")
     @PreAuthorize("hasAnyRole('TEACHER','ADMIN')")
+    @AuditOperation(action = "EXAM_TERMINATE", targetType = "EXAM", targetId = "#examId")
     public ApiResponse<Void> terminate(@PathVariable Long examId) {
         examService.terminateExam(examId);
         return ApiResponse.ok("终止成功", null);

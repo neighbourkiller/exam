@@ -1,6 +1,7 @@
 package com.ekusys.exam.teacher.controller;
 
 import com.ekusys.exam.common.api.ApiResponse;
+import com.ekusys.exam.common.audit.AuditOperation;
 import com.ekusys.exam.common.api.PageResponse;
 import com.ekusys.exam.teacher.dto.TeacherClassAddStudentsRequest;
 import com.ekusys.exam.teacher.dto.TeacherClassStudentCandidateQueryRequest;
@@ -40,6 +41,8 @@ public class TeacherClassController {
     }
 
     @PostMapping("/{classId}/students")
+    @AuditOperation(action = "TEACHING_CLASS_ADD_STUDENTS", targetType = "TEACHING_CLASS", targetId = "#classId",
+        detail = "#request.studentIds")
     public ApiResponse<Void> addStudents(@PathVariable Long classId,
                                          @Valid @RequestBody TeacherClassAddStudentsRequest request) {
         teacherClassService.addStudents(classId, request.getStudentIds());
@@ -47,6 +50,8 @@ public class TeacherClassController {
     }
 
     @DeleteMapping("/{classId}/students/{studentId}")
+    @AuditOperation(action = "TEACHING_CLASS_REMOVE_STUDENT", targetType = "TEACHING_CLASS", targetId = "#classId",
+        detail = "#studentId")
     public ApiResponse<Void> removeStudent(@PathVariable Long classId, @PathVariable Long studentId) {
         teacherClassService.removeStudent(classId, studentId);
         return ApiResponse.ok("移除成功", null);

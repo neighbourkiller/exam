@@ -5,7 +5,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ekusys.exam.auth.config.AuthRateLimitProperties;
+import com.ekusys.exam.common.security.AuthRateLimitFilter;
 import com.ekusys.exam.common.security.JwtAuthenticationFilter;
+import com.ekusys.exam.common.security.AuthRateLimitService;
 import com.ekusys.exam.exam.controller.ExamController;
 import com.ekusys.exam.exam.dto.StartExamResponse;
 import com.ekusys.exam.exam.dto.SubmitResultView;
@@ -24,7 +27,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(value = ExamController.class, excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = JwtAuthenticationFilter.class))
+@WebMvcTest(value = ExamController.class, excludeFilters = @ComponentScan.Filter(
+    type = FilterType.ASSIGNABLE_TYPE,
+    classes = {JwtAuthenticationFilter.class, AuthRateLimitFilter.class}
+))
 @AutoConfigureMockMvc(addFilters = false)
 class ExamControllerTest {
 
@@ -39,14 +45,22 @@ class ExamControllerTest {
     @MockitoBean
     private ExamProctoringService examProctoringService;
 
+    @MockitoBean
+    private AuthRateLimitService authRateLimitService;
+
+    @MockitoBean
+    private AuthRateLimitProperties authRateLimitProperties;
+
     @Test
     void startShouldReturnExamPayload() throws Exception {
         when(examService.startExam(1L)).thenReturn(StartExamResponse.builder()
             .examId(1L)
             .examName("Java期末")
+            .resumed(true)
             .durationMinutes(60)
             .startTime(LocalDateTime.of(2026, 4, 1, 10, 0))
             .endTime(LocalDateTime.of(2026, 4, 1, 11, 0))
+            .draftUpdatedAt(LocalDateTime.of(2026, 4, 1, 10, 20))
             .questions(List.of())
             .build());
 
@@ -54,7 +68,9 @@ class ExamControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.examId").value(1))
-            .andExpect(jsonPath("$.data.examName").value("Java期末"));
+            .andExpect(jsonPath("$.data.examName").value("Java期末"))
+            .andExpect(jsonPath("$.data.resumed").value(true))
+            .andExpect(jsonPath("$.data.draftUpdatedAt").exists());
     }
 
     @Test

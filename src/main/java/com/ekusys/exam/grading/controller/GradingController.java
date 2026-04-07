@@ -1,6 +1,7 @@
 package com.ekusys.exam.grading.controller;
 
 import com.ekusys.exam.common.api.ApiResponse;
+import com.ekusys.exam.common.audit.AuditOperation;
 import com.ekusys.exam.grading.dto.PendingAnswerView;
 import com.ekusys.exam.grading.dto.SubjectiveScoreRequest;
 import com.ekusys.exam.grading.service.GradingService;
@@ -31,6 +32,8 @@ public class GradingController {
     }
 
     @PostMapping("/{submissionId}/subjective-score")
+    @AuditOperation(action = "SUBMISSION_SCORE_SUBJECTIVE", targetType = "SUBMISSION", targetId = "#submissionId",
+        detail = "#request.scores")
     public ApiResponse<Void> score(@PathVariable Long submissionId, @Valid @RequestBody SubjectiveScoreRequest request) {
         gradingService.scoreSubjective(submissionId, request);
         return ApiResponse.ok("评分成功", null);

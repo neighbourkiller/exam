@@ -1,9 +1,11 @@
 package com.ekusys.exam.exam.service;
 
 import com.ekusys.exam.common.enums.ExamStatus;
+import com.ekusys.exam.common.enums.SessionStatus;
 import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.exam.dto.StartExamResponse;
 import com.ekusys.exam.repository.entity.Exam;
+import com.ekusys.exam.repository.entity.ExamSession;
 import java.time.LocalDateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,15 +21,18 @@ public class ExamStartService {
     private final ExamStatusService examStatusService;
     private final ExamSessionService examSessionService;
     private final ExamQuestionAssembler examQuestionAssembler;
+    private final ExamSnapshotService examSnapshotService;
 
     public ExamStartService(ExamAccessService examAccessService,
                             ExamStatusService examStatusService,
                             ExamSessionService examSessionService,
-                            ExamQuestionAssembler examQuestionAssembler) {
+                            ExamQuestionAssembler examQuestionAssembler,
+                            ExamSnapshotService examSnapshotService) {
         this.examAccessService = examAccessService;
         this.examStatusService = examStatusService;
         this.examSessionService = examSessionService;
         this.examQuestionAssembler = examQuestionAssembler;
+        this.examSnapshotService = examSnapshotService;
     }
 
     @Transactional
@@ -55,6 +60,7 @@ public class ExamStartService {
         }
 
         LocalDateTime deadlineTime = resolveDeadlineTime(exam, now);
+        ExamSession existingSession = examSessionService.findLatestSession(examId, studentId);
         var session = examSessionService.startAnsweringSession(examId, studentId, now, deadlineTime);
         examSessionService.ensureInProgressSubmission(examId, studentId);
         log.info("Exam started: examId={}, studentId={}", examId, studentId);
@@ -62,12 +68,22 @@ public class ExamStartService {
         return StartExamResponse.builder()
             .examId(exam.getId())
             .examName(exam.getName())
+            .resumed(isResumed(existingSession))
             .durationMinutes(exam.getDurationMinutes())
             .startTime(exam.getStartTime())
             .endTime(exam.getEndTime())
             .deadlineTime(session.getDeadlineTime())
+            .draftUpdatedAt(examSnapshotService.resolveDraftUpdatedAt(examId, studentId))
             .questions(examQuestionAssembler.assembleQuestions(exam.getPaperId(), examId, studentId))
             .build();
+    }
+
+    private boolean isResumed(ExamSession session) {
+        if (session == null || session.getStatus() == null) {
+            return false;
+        }
+        return !SessionStatus.SUBMITTED.name().equals(session.getStatus())
+            && !SessionStatus.TIMEOUT.name().equals(session.getStatus());
     }
 
     private LocalDateTime resolveDeadlineTime(Exam exam, LocalDateTime now) {

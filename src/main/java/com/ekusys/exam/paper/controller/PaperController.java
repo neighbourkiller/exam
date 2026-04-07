@@ -1,6 +1,7 @@
 package com.ekusys.exam.paper.controller;
 
 import com.ekusys.exam.common.api.ApiResponse;
+import com.ekusys.exam.common.audit.AuditOperation;
 import com.ekusys.exam.common.api.PageResponse;
 import com.ekusys.exam.paper.dto.AutoGeneratePaperRequest;
 import com.ekusys.exam.paper.dto.ManualCreatePaperRequest;
@@ -32,11 +33,13 @@ public class PaperController {
     }
 
     @PostMapping("/manual")
+    @AuditOperation(action = "PAPER_CREATE_MANUAL", targetType = "PAPER", targetId = "#result.data", detail = "#request.name")
     public ApiResponse<Long> manualCreate(@Valid @RequestBody ManualCreatePaperRequest request) {
         return ApiResponse.ok("组卷成功", paperService.createManual(request));
     }
 
     @PostMapping("/auto-generate")
+    @AuditOperation(action = "PAPER_CREATE_AUTO", targetType = "PAPER", targetId = "#result.data", detail = "#request.name")
     public ApiResponse<Long> autoCreate(@Valid @RequestBody AutoGeneratePaperRequest request) {
         return ApiResponse.ok("组卷成功", paperService.autoGenerate(request));
     }
@@ -52,12 +55,14 @@ public class PaperController {
     }
 
     @PutMapping("/{id}")
+    @AuditOperation(action = "PAPER_UPDATE", targetType = "PAPER", targetId = "#id", detail = "#request.name")
     public ApiResponse<Void> update(@PathVariable Long id, @Valid @RequestBody PaperUpdateRequest request) {
         paperService.update(id, request);
         return ApiResponse.ok("更新成功", null);
     }
 
     @DeleteMapping("/{id}")
+    @AuditOperation(action = "PAPER_DELETE", targetType = "PAPER", targetId = "#id")
     public ApiResponse<Void> delete(@PathVariable Long id) {
         paperService.delete(id);
         return ApiResponse.ok("删除成功", null);

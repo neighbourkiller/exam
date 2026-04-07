@@ -15,6 +15,7 @@ import com.ekusys.exam.admin.dto.UserQueryRequest;
 import com.ekusys.exam.admin.dto.UserUpdateRequest;
 import com.ekusys.exam.admin.dto.UserView;
 import com.ekusys.exam.admin.service.AdminService;
+import com.ekusys.exam.common.audit.AuditOperation;
 import com.ekusys.exam.common.api.ApiResponse;
 import com.ekusys.exam.common.api.PageResponse;
 import jakarta.validation.Valid;
@@ -46,29 +47,34 @@ public class AdminController {
     }
 
     @PostMapping("/users")
+    @AuditOperation(action = "USER_CREATE", targetType = "USER", targetId = "#result.data", detail = "#request.username")
     public ApiResponse<Long> createUser(@Valid @RequestBody UserCreateRequest request) {
         return ApiResponse.ok("创建成功", adminService.createUser(request));
     }
 
     @PutMapping("/users/{userId}")
+    @AuditOperation(action = "USER_UPDATE", targetType = "USER", targetId = "#userId", detail = "#request.realName")
     public ApiResponse<Void> updateUser(@PathVariable Long userId, @Valid @RequestBody UserUpdateRequest request) {
         adminService.updateUser(userId, request);
         return ApiResponse.ok("更新成功", null);
     }
 
     @DeleteMapping("/users/{userId}")
+    @AuditOperation(action = "USER_DELETE", targetType = "USER", targetId = "#userId")
     public ApiResponse<Void> deleteUser(@PathVariable Long userId) {
         adminService.deleteUser(userId);
         return ApiResponse.ok("删除成功", null);
     }
 
     @PostMapping("/users/{userId}/reset-password")
+    @AuditOperation(action = "USER_RESET_PASSWORD", targetType = "USER", targetId = "#userId", detail = "'reset-password'")
     public ApiResponse<Void> resetPassword(@PathVariable Long userId, @Valid @RequestBody ResetPasswordRequest request) {
         adminService.resetPassword(userId, request.getPassword());
         return ApiResponse.ok("重置成功", null);
     }
 
     @PutMapping("/users/{userId}/roles")
+    @AuditOperation(action = "USER_ASSIGN_ROLES", targetType = "USER", targetId = "#userId", detail = "#request.roleIds")
     public ApiResponse<Void> assignRoles(@PathVariable Long userId, @Valid @RequestBody AssignRolesRequest request) {
         adminService.assignRoles(userId, request.getRoleIds());
         return ApiResponse.ok("分配成功", null);
@@ -80,6 +86,7 @@ public class AdminController {
     }
 
     @PostMapping("/roles")
+    @AuditOperation(action = "ROLE_CREATE", targetType = "ROLE", targetId = "#result.data", detail = "#request.code")
     public ApiResponse<Long> createRole(@Valid @RequestBody RoleCreateRequest request) {
         return ApiResponse.ok("创建成功", adminService.createRole(request));
     }
@@ -90,11 +97,13 @@ public class AdminController {
     }
 
     @PostMapping("/courses")
+    @AuditOperation(action = "COURSE_CREATE", targetType = "COURSE", targetId = "#result.data", detail = "#request.name")
     public ApiResponse<Long> createCourse(@Valid @RequestBody CourseCreateRequest request) {
         return ApiResponse.ok("创建成功", adminService.createCourse(request));
     }
 
     @PutMapping("/courses/{courseId}")
+    @AuditOperation(action = "COURSE_UPDATE", targetType = "COURSE", targetId = "#courseId", detail = "#request.name")
     public ApiResponse<Void> updateCourse(@PathVariable Long courseId, @Valid @RequestBody CourseUpdateRequest request) {
         adminService.updateCourse(courseId, request);
         return ApiResponse.ok("更新成功", null);
@@ -106,11 +115,13 @@ public class AdminController {
     }
 
     @PostMapping("/teaching-classes")
+    @AuditOperation(action = "TEACHING_CLASS_CREATE", targetType = "TEACHING_CLASS", targetId = "#result.data", detail = "#request.name")
     public ApiResponse<Long> createTeachingClass(@Valid @RequestBody TeachingClassCreateRequest request) {
         return ApiResponse.ok("创建成功", adminService.createTeachingClass(request));
     }
 
     @PutMapping("/teaching-classes/{id}")
+    @AuditOperation(action = "TEACHING_CLASS_UPDATE", targetType = "TEACHING_CLASS", targetId = "#id", detail = "#request.name")
     public ApiResponse<Void> updateTeachingClass(@PathVariable Long id,
                                                  @Valid @RequestBody TeachingClassUpdateRequest request) {
         adminService.updateTeachingClass(id, request);

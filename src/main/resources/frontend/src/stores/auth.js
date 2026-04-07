@@ -35,6 +35,7 @@ clearLegacyAuthStorage()
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     token: '',
+    userId: null,
     username: '',
     roles: []
   }),
@@ -48,12 +49,18 @@ export const useAuthStore = defineStore('auth', {
     setAuth(payload = {}) {
       this.token = payload.accessToken || ''
       this.roles = payload.roles || []
+      if (payload.userId !== undefined) {
+        this.userId = payload.userId || null
+      }
       if (payload.username !== undefined) {
         this.username = payload.username || ''
       }
       clearLegacyAuthStorage()
     },
     setProfile(profile = {}) {
+      if (profile.userId !== undefined) {
+        this.userId = profile.userId || null
+      }
       this.username = profile.username || this.username || ''
       if (Array.isArray(profile.roles) && profile.roles.length) {
         this.roles = profile.roles
@@ -61,6 +68,7 @@ export const useAuthStore = defineStore('auth', {
     },
     clear() {
       this.token = ''
+      this.userId = null
       this.roles = []
       this.username = ''
       clearLegacyAuthStorage()
