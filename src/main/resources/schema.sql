@@ -1,3 +1,6 @@
+-- Legacy reference only.
+-- Runtime schema is managed by Flyway migrations under classpath:db/migration.
+
 CREATE TABLE IF NOT EXISTS sys_user (
     id BIGINT PRIMARY KEY,
     username VARCHAR(64) NOT NULL UNIQUE,

@@ -424,7 +424,7 @@ const submit = async (needConfirm = true) => {
   }
   await submitExamApi(examId, payload)
   try {
-    await ElMessageBox.confirm('交卷成功，是否前往考试结果中心查看成绩状态？', '提交成功', {
+    await ElMessageBox.confirm('试卷已提交，系统正在处理成绩。是否前往考试结果中心查看成绩状态？', '提交成功', {
       confirmButtonText: '查看考试结果',
       cancelButtonText: '返回我的考试',
       type: 'success',

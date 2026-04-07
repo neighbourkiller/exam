@@ -69,7 +69,8 @@ public class ExamStudentQueryService {
                 .eq(Submission::getStudentId, studentId)
                 .in(Submission::getExamId, examIds)
         ).stream()
-            .filter(item -> SubmissionStatus.SUBMITTED.name().equals(item.getStatus())
+            .filter(item -> SubmissionStatus.PROCESSING.name().equals(item.getStatus())
+                || SubmissionStatus.SUBMITTED.name().equals(item.getStatus())
                 || SubmissionStatus.GRADED.name().equals(item.getStatus()))
             .map(Submission::getExamId)
             .collect(Collectors.toSet());

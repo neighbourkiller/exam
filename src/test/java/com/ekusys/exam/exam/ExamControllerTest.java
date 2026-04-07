@@ -58,12 +58,33 @@ class ExamControllerTest {
     }
 
     @Test
-    void submitShouldReturnSubmissionResult() throws Exception {
+    void submitShouldReturnProcessingResult() throws Exception {
         when(examService.submit(org.mockito.ArgumentMatchers.eq(1L), org.mockito.ArgumentMatchers.any())).thenReturn(
             SubmitResultView.builder()
                 .submissionId(99L)
-                .objectiveScore(40)
-                .subjectiveScore(20)
+                .status("PROCESSING")
+                .build()
+        );
+
+        mockMvc.perform(post("/api/v1/exams/1/submit")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(java.util.Map.of(
+                    "answers", List.of(java.util.Map.of("questionId", 1, "answerText", "A"))
+                ))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.submissionId").value(99))
+            .andExpect(jsonPath("$.data.totalScore").doesNotExist())
+            .andExpect(jsonPath("$.data.status").value("PROCESSING"));
+    }
+
+    @Test
+    void submitShouldReturnFallbackStatusWhenSyncDowngraded() throws Exception {
+        when(examService.submit(org.mockito.ArgumentMatchers.eq(1L), org.mockito.ArgumentMatchers.any())).thenReturn(
+            SubmitResultView.builder()
+                .submissionId(100L)
+                .objectiveScore(60)
+                .subjectiveScore(0)
                 .totalScore(60)
                 .passFlag(true)
                 .status("GRADED")
@@ -77,7 +98,7 @@ class ExamControllerTest {
                 ))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
-            .andExpect(jsonPath("$.data.submissionId").value(99))
+            .andExpect(jsonPath("$.data.submissionId").value(100))
             .andExpect(jsonPath("$.data.totalScore").value(60))
             .andExpect(jsonPath("$.data.status").value("GRADED"));
     }

@@ -106,6 +106,7 @@ const examStatusTagType = (status) => {
 const submissionStatusText = (row) => {
   if (!row || !row.submissionId) return '未交卷'
   if (row.submissionStatus === 'IN_PROGRESS') return '作答中'
+  if (row.submissionStatus === 'PROCESSING') return '系统判分中'
   if (row.submissionStatus === 'SUBMITTED') return '待阅卷'
   if (row.submissionStatus === 'GRADED') return '已出分'
   return row.submissionStatus || '--'
@@ -114,6 +115,7 @@ const submissionStatusText = (row) => {
 const submissionStatusTagType = (row) => {
   const text = submissionStatusText(row)
   if (text === '已出分') return 'success'
+  if (text === '系统判分中') return 'warning'
   if (text === '待阅卷') return 'warning'
   if (text === '作答中') return 'danger'
   return 'info'

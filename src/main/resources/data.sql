@@ -1,3 +1,7 @@
+-- Legacy reference only.
+-- Runtime seed data is managed by Flyway migrations under classpath:db/migration
+-- and classpath:db/dev-seed (dev profile only).
+
 INSERT INTO sys_role (id, code, name, create_time, update_time, create_by, update_by)
 VALUES
     (1, 'ADMIN', '管理员', NOW(), NOW(), 0, 0),

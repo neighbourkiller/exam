@@ -12,7 +12,6 @@ import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.exam.dto.StartExamResponse;
 import com.ekusys.exam.exam.service.ExamAccessService;
 import com.ekusys.exam.exam.service.ExamAntiCheatWriteService;
-import com.ekusys.exam.exam.service.ExamLifecycleService;
 import com.ekusys.exam.exam.service.ExamAutoSubmitService;
 import com.ekusys.exam.exam.service.ExamPermissionService;
 import com.ekusys.exam.exam.service.ExamQuestionAssembler;
@@ -136,7 +135,7 @@ class ExamServiceTest {
             snapshotService
         );
         examService = new ExamService(
-            new ExamLifecycleService(
+            new com.ekusys.exam.exam.service.ExamLifecycleService(
                 paperMapper,
                 examMapper,
                 examTargetClassMapper,
@@ -169,27 +168,8 @@ class ExamServiceTest {
             ),
             snapshotService,
             new ExamAntiCheatWriteService(accessService, antiCheatEventMapper),
-            new ExamSubmissionService(
-                accessService,
-                sessionService,
-                snapshotService,
-                submissionMapper,
-                submissionAnswerMapper,
-                paperQuestionMapper,
-                questionMapper
-            ),
-            new ExamAutoSubmitService(
-                sessionService,
-                new ExamSubmissionService(
-                    accessService,
-                    sessionService,
-                    snapshotService,
-                    submissionMapper,
-                    submissionAnswerMapper,
-                    paperQuestionMapper,
-                    questionMapper
-                )
-            )
+            org.mockito.Mockito.mock(ExamSubmissionService.class),
+            org.mockito.Mockito.mock(ExamAutoSubmitService.class)
         );
     }
 
