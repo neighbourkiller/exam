@@ -1,12 +1,13 @@
 package com.ekusys.exam.auth.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.ekusys.exam.auth.dto.AuthResponse;
+import com.ekusys.exam.auth.dto.AuthTokens;
 import com.ekusys.exam.auth.dto.LoginRequest;
 import com.ekusys.exam.auth.dto.MeResponse;
 import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.common.security.JwtTokenProvider;
 import com.ekusys.exam.common.security.LoginUser;
+import io.jsonwebtoken.JwtException;
 import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.repository.entity.User;
 import com.ekusys.exam.repository.mapper.UserMapper;
@@ -14,6 +15,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -38,21 +40,32 @@ public class AuthService {
         this.refreshTokenSessionService = refreshTokenSessionService;
     }
 
-    public AuthResponse login(LoginRequest request) {
-        Authentication authentication = authenticationManager.authenticate(
-            new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
-        );
+    public AuthTokens login(LoginRequest request) {
+        Authentication authentication;
+        try {
+            authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
+            );
+        } catch (AuthenticationException ex) {
+            throw new BusinessException("用户名或密码错误");
+        }
         LoginUser user = (LoginUser) authentication.getPrincipal();
         log.info("User login success: userId={}, username={}", user.getUserId(), user.getUsername());
         return issueTokens(user);
     }
 
-    public AuthResponse refresh(String refreshToken) {
-        if (!jwtTokenProvider.isRefreshToken(refreshToken)) {
+    public AuthTokens refresh(String refreshToken) {
+        LoginUser tokenUser;
+        String tokenId;
+        try {
+            if (!jwtTokenProvider.isRefreshToken(refreshToken)) {
+                throw new BusinessException("无效的刷新令牌");
+            }
+            tokenUser = jwtTokenProvider.parseLoginUser(refreshToken);
+            tokenId = jwtTokenProvider.getTokenId(refreshToken);
+        } catch (JwtException | IllegalArgumentException ex) {
             throw new BusinessException("无效的刷新令牌");
         }
-        LoginUser tokenUser = jwtTokenProvider.parseLoginUser(refreshToken);
-        String tokenId = jwtTokenProvider.getTokenId(refreshToken);
         if (!refreshTokenSessionService.isActive(tokenUser.getUserId(), tokenId)) {
             throw new BusinessException("刷新令牌已失效，请重新登录");
         }
@@ -86,12 +99,27 @@ public class AuthService {
             .build();
     }
 
-    private AuthResponse issueTokens(LoginUser user) {
+    public void logout(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return;
+        }
+        try {
+            if (!jwtTokenProvider.isRefreshToken(refreshToken)) {
+                return;
+            }
+            LoginUser tokenUser = jwtTokenProvider.parseLoginUser(refreshToken);
+            refreshTokenSessionService.revoke(tokenUser.getUserId());
+        } catch (JwtException | IllegalArgumentException ignored) {
+            // Ignore invalid refresh token on logout; cookie cleanup happens at controller layer.
+        }
+    }
+
+    private AuthTokens issueTokens(LoginUser user) {
         String accessToken = jwtTokenProvider.createAccessToken(user);
         String refreshTokenId = UUID.randomUUID().toString();
         String refreshToken = jwtTokenProvider.createRefreshToken(user, refreshTokenId);
         refreshTokenSessionService.store(user.getUserId(), refreshTokenId, jwtTokenProvider.getExpiration(refreshToken));
-        return AuthResponse.builder()
+        return AuthTokens.builder()
             .accessToken(accessToken)
             .refreshToken(refreshToken)
             .tokenType("Bearer")
@@ -99,3 +127,4 @@ public class AuthService {
             .build();
     }
 }
+

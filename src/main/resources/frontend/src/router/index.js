@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { restoreSession } from '../api/http'
 import { useAuthStore } from '../stores/auth'
 
 const LoginView = () => import('../views/auth/LoginView.vue')
@@ -45,14 +46,17 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
   if (to.path === '/login') {
     return true
   }
 
-  if (!auth.ensureSession()) {
-    return '/login'
+  if (!auth.isLogin) {
+    const restored = await restoreSession()
+    if (!restored) {
+      return '/login'
+    }
   }
 
   const allowRoles = to.meta?.roles || []

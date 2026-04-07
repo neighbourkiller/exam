@@ -54,6 +54,19 @@ app:
     allowed-origins:
       - ${APP_CORS_ORIGIN_1:http://localhost:5173}
       - ${APP_CORS_ORIGIN_2:http://127.0.0.1:5173}
+  auth:
+    cookie:
+      name: ${APP_AUTH_COOKIE_NAME:exam_refresh_token}
+      path: ${APP_AUTH_COOKIE_PATH:/api/v1/auth}
+      http-only: ${APP_AUTH_COOKIE_HTTP_ONLY:true}
+      secure: ${APP_AUTH_COOKIE_SECURE:false}
+      same-site: ${APP_AUTH_COOKIE_SAME_SITE:Lax}
+      max-age-seconds: ${APP_AUTH_COOKIE_MAX_AGE_SECONDS:604800}
+    rate-limit:
+      key-prefix: ${APP_AUTH_RATE_LIMIT_KEY_PREFIX:auth:rate-limit:}
+      window-seconds: ${APP_AUTH_RATE_LIMIT_WINDOW_SECONDS:60}
+      login-limit: ${APP_AUTH_RATE_LIMIT_LOGIN_LIMIT:10}
+      refresh-limit: ${APP_AUTH_RATE_LIMIT_REFRESH_LIMIT:30}
   snapshot:
     flush-interval-ms: ${APP_SNAPSHOT_FLUSH_INTERVAL_MS:30000}
     ttl-hours: ${APP_SNAPSHOT_TTL_HOURS:48}

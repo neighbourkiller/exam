@@ -9,7 +9,14 @@ import lombok.Data;
 public class AuthResponse {
 
     private String accessToken;
-    private String refreshToken;
     private String tokenType;
     private List<String> roles;
+
+    public static AuthResponse from(AuthTokens tokens) {
+        return AuthResponse.builder()
+            .accessToken(tokens.getAccessToken())
+            .tokenType(tokens.getTokenType())
+            .roles(tokens.getRoles())
+            .build();
+    }
 }

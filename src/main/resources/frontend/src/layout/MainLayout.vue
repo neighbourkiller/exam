@@ -39,6 +39,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { logoutApi } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
@@ -55,9 +56,15 @@ const onSelect = (index) => {
   router.push(index)
 }
 
-const logout = () => {
-  auth.clear()
-  router.push('/login')
+const logout = async () => {
+  try {
+    await logoutApi()
+  } catch (error) {
+    console.error(error)
+  } finally {
+    auth.clear()
+    router.push('/login')
+  }
 }
 </script>
 

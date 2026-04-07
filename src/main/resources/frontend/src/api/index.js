@@ -1,6 +1,7 @@
 import http from './http'
 
 export const loginApi = (data) => http.post('/auth/login', data)
+export const logoutApi = () => http.post('/auth/logout')
 export const meApi = () => http.get('/auth/me')
 
 export const queryQuestionsApi = (data) => http.post('/questions/query', data)

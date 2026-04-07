@@ -1,42 +1,58 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
-import { useAuthStore } from '../stores/auth'
+import { clearLegacyAuthStorage, useAuthStore } from '../stores/auth'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:16730/api/v1'
 
 const http = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000
+  timeout: 15000,
+  withCredentials: true
+})
+
+const authHttp = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 15000,
+  withCredentials: true
 })
 
 let refreshPromise = null
 
-const isAuthRoute = (url = '') => url.includes('/auth/login') || url.includes('/auth/refresh')
+const isAuthRoute = (url = '') => url.includes('/auth/login') || url.includes('/auth/refresh') || url.includes('/auth/logout')
 
-const clearAuthState = () => {
+const getAuthStore = () => {
   try {
-    const auth = useAuthStore()
-    auth.clear()
+    return useAuthStore()
   } catch {
-    localStorage.removeItem('token')
-    localStorage.removeItem('refreshToken')
-    localStorage.removeItem('roles')
-    localStorage.removeItem('username')
+    return null
   }
 }
 
-const applyAuthPayload = (payload) => {
-  try {
-    const auth = useAuthStore()
-    auth.setAuth({
-      ...payload,
-      username: auth.username || localStorage.getItem('username') || ''
-    })
-  } catch {
-    localStorage.setItem('token', payload.accessToken || '')
-    localStorage.setItem('refreshToken', payload.refreshToken || '')
-    localStorage.setItem('roles', JSON.stringify(payload.roles || []))
+const buildBusinessError = (message, code = null, responseData = null) => {
+  const error = new Error(message || '请求失败')
+  error.code = code
+  error.responseData = responseData
+  return error
+}
+
+const clearAuthState = () => {
+  const auth = getAuthStore()
+  if (auth) {
+    auth.clear()
+    return
   }
+  clearLegacyAuthStorage()
+}
+
+const applyAuthPayload = (payload) => {
+  const auth = getAuthStore()
+  if (!auth) {
+    return
+  }
+  auth.setAuth({
+    ...payload,
+    username: auth.username
+  })
 }
 
 const redirectToLogin = () => {
@@ -45,32 +61,67 @@ const redirectToLogin = () => {
   }
 }
 
-const refreshAccessToken = async () => {
+export const loadCurrentUserProfile = async () => {
+  const profile = await http.get('/auth/me')
+  const auth = getAuthStore()
+  if (auth) {
+    auth.setProfile(profile)
+  }
+  return profile
+}
+
+export const refreshAccessToken = async () => {
   if (refreshPromise) {
     return refreshPromise
   }
-  const refreshToken = localStorage.getItem('refreshToken')
-  if (!refreshToken) {
-    throw new Error('缺少刷新令牌')
-  }
-  refreshPromise = axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken }, {
-    timeout: 15000
-  }).then((response) => {
-    const payload = response?.data?.data
-    if (!response?.data?.success || !payload?.accessToken) {
-      throw new Error(response?.data?.message || '刷新登录态失败')
-    }
-    applyAuthPayload(payload)
-    return payload.accessToken
-  }).finally(() => {
-    refreshPromise = null
-  })
+  refreshPromise = authHttp.post('/auth/refresh')
+    .then((response) => {
+      const payload = response?.data?.data
+      if (!response?.data?.success || !payload?.accessToken) {
+        throw buildBusinessError(response?.data?.message || '刷新登录态失败', response?.data?.code || null, response?.data)
+      }
+      applyAuthPayload(payload)
+      return payload.accessToken
+    })
+    .finally(() => {
+      refreshPromise = null
+    })
   return refreshPromise
 }
 
+export const restoreSession = async () => {
+  const auth = getAuthStore()
+  if (auth?.isLogin) {
+    if (!auth.username) {
+      try {
+        await loadCurrentUserProfile()
+      } catch {
+        // Ignore profile hydration failures during session restore.
+      }
+    }
+    return true
+  }
+
+  try {
+    await refreshAccessToken()
+    if (auth && !auth.username) {
+      try {
+        await loadCurrentUserProfile()
+      } catch {
+        // Ignore profile hydration failures during session restore.
+      }
+    }
+    return true
+  } catch {
+    clearAuthState()
+    return false
+  }
+}
+
 http.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
+  const token = getAuthStore()?.token
   if (token) {
+    config.headers = config.headers || {}
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
@@ -83,10 +134,7 @@ http.interceptors.response.use(
       return resp.data
     }
     ElMessage.error(resp?.message || '请求失败')
-    const businessError = new Error(resp?.message || '请求失败')
-    businessError.code = resp?.code || null
-    businessError.responseData = resp
-    return Promise.reject(businessError)
+    return Promise.reject(buildBusinessError(resp?.message || '请求失败', resp?.code || null, resp))
   },
   async (error) => {
     const status = error?.response?.status

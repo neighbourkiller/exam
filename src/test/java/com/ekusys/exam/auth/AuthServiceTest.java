@@ -4,10 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.ekusys.exam.auth.dto.AuthResponse;
+import com.ekusys.exam.auth.dto.AuthTokens;
 import com.ekusys.exam.auth.dto.LoginRequest;
 import com.ekusys.exam.auth.service.AuthService;
 import com.ekusys.exam.auth.service.RefreshTokenSessionService;
@@ -66,7 +67,7 @@ class AuthServiceTest {
         LoginRequest request = new LoginRequest();
         request.setUsername("alice");
         request.setPassword("secret");
-        AuthResponse response = authService.login(request);
+        AuthTokens response = authService.login(request);
 
         assertEquals("access-token", response.getAccessToken());
         assertEquals("refresh-token", response.getRefreshToken());
@@ -112,10 +113,35 @@ class AuthServiceTest {
         when(jwtTokenProvider.createRefreshToken(any(LoginUser.class), any())).thenReturn("new-refresh-token");
         when(jwtTokenProvider.getExpiration("new-refresh-token")).thenReturn(Instant.parse("2026-04-06T00:00:00Z"));
 
-        AuthResponse response = authService.refresh("refresh-token");
+        AuthTokens response = authService.refresh("refresh-token");
 
         assertEquals("new-access-token", response.getAccessToken());
         assertEquals(List.of("STUDENT", "ADMIN"), response.getRoles());
         verify(refreshTokenSessionService).store(eq(1001L), any(), eq(Instant.parse("2026-04-06T00:00:00Z")));
+    }
+
+    @Test
+    void logoutShouldRevokeRefreshSessionWhenTokenValid() {
+        LoginUser tokenUser = LoginUser.builder()
+            .userId(1001L)
+            .username("alice")
+            .roles(List.of("STUDENT"))
+            .enabled(true)
+            .build();
+        when(jwtTokenProvider.isRefreshToken("refresh-token")).thenReturn(true);
+        when(jwtTokenProvider.parseLoginUser("refresh-token")).thenReturn(tokenUser);
+
+        authService.logout("refresh-token");
+
+        verify(refreshTokenSessionService).revoke(1001L);
+    }
+
+    @Test
+    void logoutShouldIgnoreInvalidRefreshToken() {
+        when(jwtTokenProvider.isRefreshToken("refresh-token")).thenReturn(false);
+
+        authService.logout("refresh-token");
+
+        verify(refreshTokenSessionService, never()).revoke(any());
     }
 }

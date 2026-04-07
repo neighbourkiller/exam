@@ -1,44 +1,55 @@
 package com.ekusys.exam.auth;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ekusys.exam.auth.config.AuthCookieProperties;
 import com.ekusys.exam.auth.controller.AuthController;
-import com.ekusys.exam.auth.dto.AuthResponse;
+import com.ekusys.exam.auth.dto.AuthTokens;
 import com.ekusys.exam.auth.dto.MeResponse;
+import com.ekusys.exam.auth.service.AuthCookieService;
 import com.ekusys.exam.auth.service.AuthService;
-import com.ekusys.exam.common.security.JwtAuthenticationFilter;
+import com.ekusys.exam.common.exception.GlobalExceptionHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.FilterType;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import static org.mockito.Mockito.when;
-
-@WebMvcTest(value = AuthController.class, excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = JwtAuthenticationFilter.class))
-@AutoConfigureMockMvc(addFilters = false)
+@ExtendWith(MockitoExtension.class)
 class AuthControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
+    @Mock
+    private AuthService authService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @MockitoBean
-    private AuthService authService;
+    private MockMvc mockMvc;
+
+    @BeforeEach
+    void setUp() {
+        AuthCookieProperties properties = new AuthCookieProperties();
+        AuthCookieService authCookieService = new AuthCookieService(properties);
+        AuthController controller = new AuthController(authService, authCookieService);
+        mockMvc = MockMvcBuilders.standaloneSetup(controller)
+            .setControllerAdvice(new GlobalExceptionHandler())
+            .build();
+    }
 
     @Test
-    void loginShouldReturnAuthPayload() throws Exception {
-        when(authService.login(org.mockito.ArgumentMatchers.any())).thenReturn(AuthResponse.builder()
+    void loginShouldReturnAuthPayloadAndSetRefreshCookie() throws Exception {
+        when(authService.login(any())).thenReturn(AuthTokens.builder()
             .accessToken("access-token")
             .refreshToken("refresh-token")
             .tokenType("Bearer")
@@ -52,14 +63,16 @@ class AuthControllerTest {
                     "password", "secret"
                 ))))
             .andExpect(status().isOk())
+            .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("exam_refresh_token=refresh-token")))
+            .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("HttpOnly")))
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.accessToken").value("access-token"))
-            .andExpect(jsonPath("$.data.refreshToken").value("refresh-token"));
+            .andExpect(jsonPath("$.data.refreshToken").doesNotExist());
     }
 
     @Test
-    void refreshShouldReturnNewTokens() throws Exception {
-        when(authService.refresh("refresh-token")).thenReturn(AuthResponse.builder()
+    void refreshShouldReadCookieAndRotateRefreshCookie() throws Exception {
+        when(authService.refresh("refresh-token")).thenReturn(AuthTokens.builder()
             .accessToken("new-access-token")
             .refreshToken("new-refresh-token")
             .tokenType("Bearer")
@@ -67,14 +80,31 @@ class AuthControllerTest {
             .build());
 
         mockMvc.perform(post("/api/v1/auth/refresh")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(java.util.Map.of(
-                    "refreshToken", "refresh-token"
-                ))))
+                .cookie(new jakarta.servlet.http.Cookie("exam_refresh_token", "refresh-token")))
             .andExpect(status().isOk())
+            .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("exam_refresh_token=new-refresh-token")))
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.accessToken").value("new-access-token"))
-            .andExpect(jsonPath("$.data.refreshToken").value("new-refresh-token"));
+            .andExpect(jsonPath("$.data.refreshToken").doesNotExist());
+    }
+
+    @Test
+    void refreshShouldFailWhenCookieMissing() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/refresh"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.message").value("缺少刷新令牌"));
+    }
+
+    @Test
+    void logoutShouldRevokeCookieAndSession() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/logout")
+                .cookie(new jakarta.servlet.http.Cookie("exam_refresh_token", "refresh-token")))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")))
+            .andExpect(jsonPath("$.success").value(true));
+
+        verify(authService).logout("refresh-token");
     }
 
     @Test
@@ -93,9 +123,3 @@ class AuthControllerTest {
             .andExpect(jsonPath("$.data.username").value("alice"));
     }
 }
-
-
-
-
-
-

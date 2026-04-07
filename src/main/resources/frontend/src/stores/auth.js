@@ -1,5 +1,16 @@
 import { defineStore } from 'pinia'
 
+const LEGACY_STORAGE_KEYS = ['token', 'refreshToken', 'roles', 'username']
+
+export function clearLegacyAuthStorage() {
+  if (typeof window === 'undefined') {
+    return
+  }
+  LEGACY_STORAGE_KEYS.forEach((key) => {
+    window.localStorage.removeItem(key)
+  })
+}
+
 function parseJwtPayload(token) {
   try {
     const parts = token.split('.')
@@ -19,12 +30,13 @@ function isExpired(token) {
   return payload.exp * 1000 <= Date.now()
 }
 
+clearLegacyAuthStorage()
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
-    token: localStorage.getItem('token') || '',
-    refreshToken: localStorage.getItem('refreshToken') || '',
-    username: localStorage.getItem('username') || '',
-    roles: JSON.parse(localStorage.getItem('roles') || '[]')
+    token: '',
+    username: '',
+    roles: []
   }),
   getters: {
     isLogin: (state) => !!state.token && !isExpired(state.token),
@@ -33,39 +45,25 @@ export const useAuthStore = defineStore('auth', {
     isStudent: (state) => state.roles.includes('STUDENT')
   },
   actions: {
-    ensureSession() {
-      if (this.token && !isExpired(this.token)) {
-        return true
-      }
-      if (this.refreshToken) {
-        this.token = this.token || ''
-        return true
-      }
-      if (!this.token) {
-        return false
-      }
-      this.clear()
-      return false
-    },
-    setAuth(payload) {
-      this.token = payload.accessToken
-      this.refreshToken = payload.refreshToken
+    setAuth(payload = {}) {
+      this.token = payload.accessToken || ''
       this.roles = payload.roles || []
-      this.username = payload.username || ''
-      localStorage.setItem('token', this.token)
-      localStorage.setItem('refreshToken', this.refreshToken)
-      localStorage.setItem('roles', JSON.stringify(this.roles))
-      localStorage.setItem('username', this.username)
+      if (payload.username !== undefined) {
+        this.username = payload.username || ''
+      }
+      clearLegacyAuthStorage()
+    },
+    setProfile(profile = {}) {
+      this.username = profile.username || this.username || ''
+      if (Array.isArray(profile.roles) && profile.roles.length) {
+        this.roles = profile.roles
+      }
     },
     clear() {
       this.token = ''
-      this.refreshToken = ''
       this.roles = []
       this.username = ''
-      localStorage.removeItem('token')
-      localStorage.removeItem('refreshToken')
-      localStorage.removeItem('roles')
-      localStorage.removeItem('username')
+      clearLegacyAuthStorage()
     }
   }
 })

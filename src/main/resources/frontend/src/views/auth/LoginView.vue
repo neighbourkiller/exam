@@ -151,15 +151,10 @@ const onSubmit = async () => {
     const tokens = await loginApi(form)
     auth.setAuth({
       ...tokens,
-      username: form.username,
       roles: tokens.roles || []
     })
     const me = await meApi()
-    auth.setAuth({
-      ...tokens,
-      username: me.username,
-      roles: me.roles
-    })
+    auth.setProfile(me)
     ElMessage.success('登录成功，欢迎进入系统')
     if (me.roles.includes('STUDENT')) {
       router.push('/student/exams')
@@ -170,7 +165,7 @@ const onSubmit = async () => {
     }
   } catch (err) {
     console.error(err)
-    ElMessage.error(err.response?.data?.message || '登录失败，请检查账号密码')
+    ElMessage.error(err.message || '登录失败，请检查账号密码')
   } finally {
     loading.value = false
   }
@@ -483,3 +478,4 @@ const onSubmit = async () => {
   }
 }
 </style>
+
