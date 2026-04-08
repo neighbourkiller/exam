@@ -154,9 +154,9 @@ class GradingServiceTest {
             shortQuestion(503L, "题目C", 20)
         ));
         when(paperQuestionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
-            paperQuestion(10001L, 501L, 2),
-            paperQuestion(10001L, 502L, 1),
-            paperQuestion(10002L, 503L, 1)
+            paperQuestion(10001L, 501L, 2, 12),
+            paperQuestion(10001L, 502L, 1, 15),
+            paperQuestion(10002L, 503L, 1, 20)
         ));
 
         try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
@@ -169,6 +169,7 @@ class GradingServiceTest {
             assertEquals(503L, result.get(0).getQuestionId());
             assertEquals(101L, result.get(1).getExamId());
             assertEquals(502L, result.get(1).getQuestionId());
+            assertEquals(12, result.get(2).getDefaultScore());
             assertEquals(2, result.get(2).getPendingCount());
         }
     }
@@ -207,7 +208,10 @@ class GradingServiceTest {
     void scoreQuestionAnswersShouldUpdateEachSubmissionTotals() {
         when(userMapper.selectRoleCodes(200L)).thenReturn(List.of("TEACHER"));
         when(examMapper.selectById(101L)).thenReturn(exam(101L, 200L, 10001L, LocalDateTime.of(2026, 4, 7, 9, 0)));
-        when(questionMapper.selectById(501L)).thenReturn(shortQuestion(501L, "题目A", 10));
+        when(questionMapper.selectById(501L)).thenReturn(shortQuestion(501L, "题目A", 5));
+        when(paperQuestionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
+            paperQuestion(10001L, 501L, 1, 8)
+        ));
         when(submissionAnswerMapper.selectBatchIds(List.of(11L, 12L))).thenReturn(List.of(
             answer(11L, 1L, 501L, "答案A1"),
             answer(12L, 2L, 501L, "答案A2")
@@ -244,10 +248,13 @@ class GradingServiceTest {
     }
 
     @Test
-    void scoreQuestionAnswersShouldRejectScoreBeyondQuestionDefault() {
+    void scoreQuestionAnswersShouldRejectScoreBeyondPaperQuestionScore() {
         when(userMapper.selectRoleCodes(200L)).thenReturn(List.of("TEACHER"));
         when(examMapper.selectById(101L)).thenReturn(exam(101L, 200L, 10001L, LocalDateTime.of(2026, 4, 7, 9, 0)));
-        when(questionMapper.selectById(501L)).thenReturn(shortQuestion(501L, "题目A", 10));
+        when(questionMapper.selectById(501L)).thenReturn(shortQuestion(501L, "题目A", 5));
+        when(paperQuestionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
+            paperQuestion(10001L, 501L, 1, 10)
+        ));
 
         QuestionBatchScoreRequest request = new QuestionBatchScoreRequest();
         request.setExamId(101L);
@@ -330,11 +337,12 @@ class GradingServiceTest {
         return answer;
     }
 
-    private PaperQuestion paperQuestion(Long paperId, Long questionId, Integer sortOrder) {
+    private PaperQuestion paperQuestion(Long paperId, Long questionId, Integer sortOrder, Integer score) {
         PaperQuestion paperQuestion = new PaperQuestion();
         paperQuestion.setPaperId(paperId);
         paperQuestion.setQuestionId(questionId);
         paperQuestion.setSortOrder(sortOrder);
+        paperQuestion.setScore(score);
         return paperQuestion;
     }
 

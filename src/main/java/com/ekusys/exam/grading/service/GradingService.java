@@ -117,7 +117,9 @@ public class GradingService {
             return List.of();
         }
 
-        List<SubmissionAnswer> answers = loadAnswersBySubmissionIds(context.submissionIds());
+        List<SubmissionAnswer> answers = context.answersBySubmission().values().stream()
+            .flatMap(List::stream)
+            .toList();
         Map<Long, Question> questionMap = loadQuestionMap(answers);
         Map<String, PaperQuestion> paperQuestionMap = loadPaperQuestionMap(context.examMap().values());
         Map<QuestionGroupKey, PendingQuestionGroupView> groups = new LinkedHashMap<>();
@@ -144,8 +146,8 @@ public class GradingService {
                         .questionContent(question.getContent())
                         .referenceAnswer(question.getAnswer())
                         .analysis(question.getAnalysis())
-                        .defaultScore(question.getDefaultScore())
-                        .sortOrder(paperQuestion == null ? Integer.MAX_VALUE : paperQuestion.getSortOrder())
+                        .defaultScore(resolveScoreLimit(question, paperQuestion))
+                        .sortOrder(paperQuestion == null ? null : paperQuestion.getSortOrder())
                         .pendingCount(1)
                         .build());
                 } else {
@@ -258,6 +260,7 @@ public class GradingService {
         Map<Long, Question> questionMap = questionIds.isEmpty()
             ? Map.of()
             : questionMapper.selectBatchIds(questionIds).stream().collect(Collectors.toMap(Question::getId, question -> question, (a, b) -> a));
+        Map<Long, PaperQuestion> paperQuestionMap = loadPaperQuestionMap(exam, questionIds);
 
         for (SubjectiveScoreItem score : request.getScores()) {
             SubmissionAnswer answer = answerMap.get(score.getSubmissionAnswerId());
@@ -266,7 +269,7 @@ public class GradingService {
             }
             Question question = questionMap.get(answer.getQuestionId());
             ensureShortQuestion(question);
-            validateScore(score.getScore(), question);
+            validateScore(score.getScore(), question, paperQuestionMap.get(answer.getQuestionId()));
 
             answer.setSubjectiveScore(score.getScore());
             submissionAnswerMapper.updateById(answer);
@@ -290,7 +293,8 @@ public class GradingService {
 
         Question question = questionMapper.selectById(questionId);
         ensureShortQuestion(question);
-        validateScore(request.getScore(), question);
+        PaperQuestion paperQuestion = loadPaperQuestionMap(exam, Set.of(questionId)).get(questionId);
+        validateScore(request.getScore(), question, paperQuestion);
 
         List<SubmissionAnswer> answers = submissionAnswerMapper.selectBatchIds(request.getSubmissionAnswerIds());
         if (answers.size() != request.getSubmissionAnswerIds().size()) {
@@ -411,6 +415,18 @@ public class GradingService {
             ));
     }
 
+    private Map<Long, PaperQuestion> loadPaperQuestionMap(Exam exam, Set<Long> questionIds) {
+        if (exam == null || exam.getPaperId() == null || questionIds == null || questionIds.isEmpty()) {
+            return Map.of();
+        }
+        return paperQuestionMapper.selectList(
+                new LambdaQueryWrapper<PaperQuestion>()
+                    .eq(PaperQuestion::getPaperId, exam.getPaperId())
+                    .in(PaperQuestion::getQuestionId, questionIds)
+            ).stream()
+            .collect(Collectors.toMap(PaperQuestion::getQuestionId, item -> item, (left, right) -> left));
+    }
+
     private void recalculateSubmissionScores(Submission submission, Exam exam) {
         List<SubmissionAnswer> answers = submissionAnswerMapper.selectList(
             new LambdaQueryWrapper<SubmissionAnswer>().eq(SubmissionAnswer::getSubmissionId, submission.getId())
@@ -438,14 +454,21 @@ public class GradingService {
         }
     }
 
-    private void validateScore(Integer score, Question question) {
+    private void validateScore(Integer score, Question question, PaperQuestion paperQuestion) {
         if (score == null) {
             throw new BusinessException("评分不能为空");
         }
-        int maxScore = question.getDefaultScore() == null ? 0 : question.getDefaultScore();
+        int maxScore = resolveScoreLimit(question, paperQuestion);
         if (score < 0 || score > maxScore) {
             throw new BusinessException("评分必须在 0 到题目分值之间");
         }
+    }
+
+    private int resolveScoreLimit(Question question, PaperQuestion paperQuestion) {
+        if (paperQuestion != null && paperQuestion.getScore() != null) {
+            return paperQuestion.getScore();
+        }
+        return question == null || question.getDefaultScore() == null ? 0 : question.getDefaultScore();
     }
 
     private boolean isPendingShortAnswer(SubmissionAnswer answer, Question question) {
