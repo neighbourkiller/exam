@@ -37,6 +37,10 @@ export const antiCheatApi = (id, data) => http.post(`/exams/${id}/anti-cheat-eve
 
 export const gradingPendingApi = () => http.get('/grading/pending')
 export const gradingScoreApi = (submissionId, data) => http.post(`/grading/${submissionId}/subjective-score`, data)
+export const gradingPendingQuestionsApi = () => http.get('/grading/pending/questions')
+export const gradingPendingQuestionAnswersApi = (questionId, examId) =>
+  http.get(`/grading/pending/questions/${questionId}/answers?examId=${examId}`)
+export const gradingQuestionBatchScoreApi = (questionId, data) => http.post(`/grading/pending/questions/${questionId}/score`, data)
 
 export const analyticsOverviewApi = (examId) => http.get(`/analytics/exams/${examId}/overview`)
 export const scoreDistributionApi = (examId) => http.get(`/analytics/exams/${examId}/score-distribution`)
