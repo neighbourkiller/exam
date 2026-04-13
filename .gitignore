@@ -48,3 +48,5 @@ src/main/resources/frontend/*.log
 CLAUDE.md
 .claude/
 .agents/
+skills-lock.json
+.omx/
