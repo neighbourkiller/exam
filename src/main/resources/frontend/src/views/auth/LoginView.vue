@@ -1,10 +1,17 @@
 <template>
-  <div class="login-page">
-    <!-- 装饰性背景 -->
-    <div class="bg-pattern"></div>
-    <div class="glow glow-1"></div>
-    <div class="glow glow-2"></div>
+  <div class="login-page" @mousemove="handleMouseMove" @mouseleave="handleMouseLeave">
+    <!-- 动态响应式背景 -->
+    <div class="dynamic-bg">
+      <div class="bg-grid"></div>
+      <!-- 悬浮装饰光点 (视差移动) -->
+      <div class="blob blob-1" :style="blob1Style"></div>
+      <div class="blob blob-2" :style="blob2Style"></div>
+      <div class="blob blob-3" :style="blob3Style"></div>
+      <!-- 鼠标跟随光晕 -->
+      <div class="cursor-glow" :style="cursorStyle"></div>
+    </div>
 
+    <!-- 静态主体面板 (无 3D 旋转，保持稳定) -->
     <div class="login-shell">
       <!-- 左侧品牌展示区 -->
       <section class="brand-panel">
@@ -119,7 +126,7 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { loginApi, meApi } from '../../api'
@@ -171,6 +178,62 @@ const onSubmit = async () => {
     loading.value = false
   }
 }
+
+// === 动态背景交互逻辑 ===
+// 使用 0 到 1 的标准化坐标，中心点为 0.5
+const mouseX = ref(0.5)
+const mouseY = ref(0.5)
+// 用于跟随光标的绝对坐标
+const cursorX = ref(-1000)
+const cursorY = ref(-1000)
+const isHovering = ref(false)
+
+const handleMouseMove = (e) => {
+  isHovering.value = true
+  const { clientX, clientY } = e
+  const { innerWidth, innerHeight } = window
+  
+  mouseX.value = clientX / innerWidth
+  mouseY.value = clientY / innerHeight
+  
+  cursorX.value = clientX
+  cursorY.value = clientY
+}
+
+const handleMouseLeave = () => {
+  isHovering.value = false
+  // 鼠标离开时缓慢回正
+  mouseX.value = 0.5
+  mouseY.value = 0.5
+}
+
+// 鼠标跟随光晕
+const cursorStyle = computed(() => {
+  if (!isHovering.value) return { opacity: 0 }
+  return {
+    transform: `translate(${cursorX.value}px, ${cursorY.value}px) translate(-50%, -50%)`,
+    opacity: 0.15
+  }
+})
+
+// 背景色块的视差位移 (不同色块移动速度和方向不同)
+const blob1Style = computed(() => {
+  const x = (mouseX.value - 0.5) * -80
+  const y = (mouseY.value - 0.5) * -80
+  return { transform: `translate(${x}px, ${y}px)` }
+})
+
+const blob2Style = computed(() => {
+  const x = (mouseX.value - 0.5) * 120
+  const y = (mouseY.value - 0.5) * 60
+  return { transform: `translate(${x}px, ${y}px)` }
+})
+
+const blob3Style = computed(() => {
+  const x = (mouseX.value - 0.5) * -60
+  const y = (mouseY.value - 0.5) * 100
+  return { transform: `translate(${x}px, ${y}px)` }
+})
 </script>
 
 <style scoped>
@@ -186,59 +249,102 @@ const onSubmit = async () => {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* 装饰性背景 */
-.bg-pattern {
+/* ================================== 
+   动态背景系统
+=================================== */
+.dynamic-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.bg-grid {
   position: absolute;
   inset: 0;
   background-image: radial-gradient(#1e293b 1px, transparent 1px);
   background-size: 32px 32px;
+  opacity: 0.5;
+  z-index: 1;
+}
+
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.4;
+  pointer-events: none;
+  /* 使用 ease-out 让跟随更平滑自然 */
+  transition: transform 1s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 0;
+}
+
+.blob-1 {
+  top: -10%; 
+  left: -10%;
+  width: 50vw; 
+  height: 50vh;
+  background: #2563eb;
+}
+
+.blob-2 {
+  bottom: -20%; 
+  right: -10%;
+  width: 60vw; 
+  height: 60vh;
+  background: #0891b2;
+}
+
+.blob-3 {
+  top: 30%; 
+  left: 40%;
+  width: 40vw; 
+  height: 40vh;
+  background: #4338ca;
   opacity: 0.3;
 }
 
-.glow {
+.cursor-glow {
   position: absolute;
-  width: 50vw;
-  height: 50vh;
+  top: 0; 
+  left: 0;
+  width: 600px; 
+  height: 600px;
+  background: radial-gradient(circle, #60a5fa 0%, transparent 60%);
   border-radius: 50%;
-  filter: blur(120px);
-  opacity: 0.15;
   pointer-events: none;
+  /* 鼠标跟随使用极短的过渡或无过渡，这里用短过渡避免卡顿感 */
+  transition: transform 0.1s ease, opacity 0.5s ease;
+  z-index: 2;
 }
 
-.glow-1 {
-  background: #3b82f6;
-  top: -10%;
-  left: -10%;
-}
-
-.glow-2 {
-  background: #0ea5e9;
-  bottom: -10%;
-  right: -10%;
-}
-
+/* ================================== 
+   静态主体面板 (不可摇晃)
+=================================== */
 .login-shell {
   width: 100%;
   max-width: 1100px;
   min-height: 640px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  background: rgba(15, 23, 42, 0.6);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 32px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.02) inset;
   overflow: hidden;
   z-index: 10;
+  position: relative;
 }
 
 /* 品牌展示面板 */
 .brand-panel {
+  flex: 1.05;
   padding: 60px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.6) 0%, rgba(15, 23, 42, 0.8) 100%);
   border-right: 1px solid rgba(255, 255, 255, 0.05);
   color: #f8fafc;
 }
@@ -274,13 +380,14 @@ const onSubmit = async () => {
   background: rgba(59, 130, 246, 0.1);
   padding: 4px 12px;
   border-radius: 20px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
 .brand-content h1 {
   font-size: 42px;
   font-weight: 800;
   margin: 24px 0 16px;
-  background: linear-gradient(to right, #f8fafc, #94a3b8);
+  background: linear-gradient(to right, #ffffff, #94a3b8);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -288,7 +395,7 @@ const onSubmit = async () => {
 .brand-subtitle {
   font-size: 16px;
   line-height: 1.6;
-  color: #94a3b8;
+  color: #cbd5e1;
   max-width: 400px;
 }
 
@@ -322,6 +429,7 @@ const onSubmit = async () => {
 
 /* 登录操作面板 */
 .login-panel {
+  flex: 0.95;
   padding: 60px;
   display: flex;
   align-items: center;
@@ -356,32 +464,47 @@ const onSubmit = async () => {
 }
 
 :deep(.el-form-item__label) {
-  color: #cbd5e1 !important;
+  color: #e2e8f0 !important;
   font-weight: 500 !important;
   padding-bottom: 8px !important;
 }
 
 :deep(.el-input__wrapper) {
-  background-color: rgba(30, 41, 59, 0.5) !important;
+  background-color: rgba(15, 23, 42, 0.4) !important;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset !important;
   border-radius: 12px !important;
   transition: all 0.2s ease !important;
 }
 
 :deep(.el-input__wrapper.is-focus) {
-  background-color: rgba(30, 41, 59, 0.8) !important;
-  box-shadow: 0 0 0 1px #3b82f6 inset, 0 0 0 4px rgba(59, 130, 246, 0.1) !important;
+  background-color: rgba(15, 23, 42, 0.8) !important;
+  box-shadow: 0 0 0 1px #3b82f6 inset, 0 0 0 4px rgba(59, 130, 246, 0.15) !important;
 }
 
 :deep(.el-input__inner) {
   color: #f8fafc !important;
   height: 48px !important;
+  background-color: transparent !important;
+}
+
+/* 修复浏览器自动填充 (Autofill) 导致的白色/黄色背景块破坏暗色主题的问题 */
+:deep(.el-input__inner:-webkit-autofill),
+:deep(.el-input__inner:-webkit-autofill:hover), 
+:deep(.el-input__inner:-webkit-autofill:focus), 
+:deep(.el-input__inner:-webkit-autofill:active) {
+  transition: background-color 5000s ease-in-out 0s;
+  -webkit-text-fill-color: #f8fafc !important;
+  caret-color: #f8fafc !important;
 }
 
 .input-icon {
   width: 18px;
   height: 18px;
   color: #64748b;
+}
+
+:deep(.el-input__wrapper.is-focus) .input-icon {
+  color: #3b82f6;
 }
 
 .login-btn {
@@ -399,6 +522,7 @@ const onSubmit = async () => {
 .login-btn:hover {
   transform: translateY(-2px) !important;
   box-shadow: 0 20px 25px -5px rgba(37, 99, 235, 0.5) !important;
+  filter: brightness(1.1);
 }
 
 .login-btn:active {
@@ -407,7 +531,6 @@ const onSubmit = async () => {
 
 /* 快捷登录 */
 .quick-login {
-  position: relative;
   text-align: center;
 }
 
@@ -425,7 +548,7 @@ const onSubmit = async () => {
   content: "";
   flex: 1;
   height: 1px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .account-hints {
@@ -439,7 +562,7 @@ const onSubmit = async () => {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
-  color: #94a3b8;
+  color: #cbd5e1;
   font-size: 13px;
   padding: 8px 16px;
   cursor: pointer;
@@ -449,12 +572,13 @@ const onSubmit = async () => {
 .hint-tag:hover {
   background: rgba(59, 130, 246, 0.1);
   border-color: rgba(59, 130, 246, 0.4);
-  color: #3b82f6;
+  color: #60a5fa;
 }
 
+/* 响应式调整 */
 @media (max-width: 1024px) {
   .login-shell {
-    grid-template-columns: 1fr;
+    display: block;
     max-width: 540px;
     min-height: auto;
   }
@@ -472,11 +596,10 @@ const onSubmit = async () => {
   .login-shell {
     border-radius: 0;
     min-height: 100vh;
+    border: none;
   }
-  
-  .login-page {
-    padding: 0;
+  .login-panel {
+    padding: 32px 20px;
   }
 }
 </style>
-
