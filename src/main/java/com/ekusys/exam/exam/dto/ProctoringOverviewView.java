@@ -17,6 +17,10 @@ public class ProctoringOverviewView {
     private Integer mediumRiskCount;
     private Integer highRiskCount;
     private Integer snapshotAlertCount;
+    private Integer pendingReviewDispositionCount;
+    private Integer confirmedDispositionCount;
+    private Integer falsePositiveDispositionCount;
+    private Integer closedDispositionCount;
     private List<ProctoringRecentEventView> recentEvents;
     private List<ProctoringEventStatView> eventTypeStats;
 }

@@ -3,6 +3,9 @@ package com.ekusys.exam.exam.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ekusys.exam.common.enums.SessionStatus;
 import com.ekusys.exam.common.exception.BusinessException;
+import com.ekusys.exam.common.security.SecurityUtils;
+import com.ekusys.exam.exam.dto.ProctoringDispositionRequest;
+import com.ekusys.exam.exam.dto.ProctoringDispositionView;
 import com.ekusys.exam.exam.dto.ProctoringEventStatView;
 import com.ekusys.exam.exam.dto.ProctoringOverviewView;
 import com.ekusys.exam.exam.dto.ProctoringRecentEventView;
@@ -13,6 +16,7 @@ import com.ekusys.exam.repository.entity.AntiCheatEvent;
 import com.ekusys.exam.repository.entity.Exam;
 import com.ekusys.exam.repository.entity.ExamSession;
 import com.ekusys.exam.repository.entity.ExamTargetClass;
+import com.ekusys.exam.repository.entity.ProctoringDisposition;
 import com.ekusys.exam.repository.entity.StudentTeachingClass;
 import com.ekusys.exam.repository.entity.Submission;
 import com.ekusys.exam.repository.entity.TeachingClass;
@@ -21,6 +25,7 @@ import com.ekusys.exam.repository.mapper.AntiCheatEventMapper;
 import com.ekusys.exam.repository.mapper.ExamMapper;
 import com.ekusys.exam.repository.mapper.ExamSessionMapper;
 import com.ekusys.exam.repository.mapper.ExamTargetClassMapper;
+import com.ekusys.exam.repository.mapper.ProctoringDispositionMapper;
 import com.ekusys.exam.repository.mapper.StudentTeachingClassMapper;
 import com.ekusys.exam.repository.mapper.SubmissionMapper;
 import com.ekusys.exam.repository.mapper.TeachingClassMapper;
@@ -42,6 +47,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ExamProctoringService {
@@ -57,6 +63,18 @@ public class ExamProctoringService {
     private static final String EVENT_CONTEXT_MENU = "CONTEXT_MENU";
     private static final String EVENT_NETWORK_OFFLINE = "NETWORK_OFFLINE";
 
+    public static final String DISPOSITION_PENDING_REVIEW = "PENDING_REVIEW";
+    public static final String DISPOSITION_CONFIRMED = "CONFIRMED";
+    public static final String DISPOSITION_FALSE_POSITIVE = "FALSE_POSITIVE";
+    public static final String DISPOSITION_CLOSED = "CLOSED";
+
+    private static final Set<String> DISPOSITION_STATUSES = Set.of(
+        DISPOSITION_PENDING_REVIEW,
+        DISPOSITION_CONFIRMED,
+        DISPOSITION_FALSE_POSITIVE,
+        DISPOSITION_CLOSED
+    );
+
     private final ExamMapper examMapper;
     private final ExamTargetClassMapper examTargetClassMapper;
     private final StudentTeachingClassMapper studentTeachingClassMapper;
@@ -65,6 +83,7 @@ public class ExamProctoringService {
     private final ExamSessionMapper examSessionMapper;
     private final SubmissionMapper submissionMapper;
     private final AntiCheatEventMapper antiCheatEventMapper;
+    private final ProctoringDispositionMapper proctoringDispositionMapper;
     private final ExamPermissionService examPermissionService;
 
     public ExamProctoringService(ExamMapper examMapper,
@@ -75,6 +94,7 @@ public class ExamProctoringService {
                                  ExamSessionMapper examSessionMapper,
                                  SubmissionMapper submissionMapper,
                                  AntiCheatEventMapper antiCheatEventMapper,
+                                 ProctoringDispositionMapper proctoringDispositionMapper,
                                  ExamPermissionService examPermissionService) {
         this.examMapper = examMapper;
         this.examTargetClassMapper = examTargetClassMapper;
@@ -84,6 +104,7 @@ public class ExamProctoringService {
         this.examSessionMapper = examSessionMapper;
         this.submissionMapper = submissionMapper;
         this.antiCheatEventMapper = antiCheatEventMapper;
+        this.proctoringDispositionMapper = proctoringDispositionMapper;
         this.examPermissionService = examPermissionService;
     }
 
@@ -96,6 +117,10 @@ public class ExamProctoringService {
         int highRiskCount = 0;
         int snapshotAlertCount = 0;
         int answeringStudents = 0;
+        int pendingReviewDispositionCount = 0;
+        int confirmedDispositionCount = 0;
+        int falsePositiveDispositionCount = 0;
+        int closedDispositionCount = 0;
         for (StudentRiskSnapshot snapshot : students) {
             if (snapshot.answering()) {
                 answeringStudents++;
@@ -107,6 +132,12 @@ public class ExamProctoringService {
                 case "HIGH" -> highRiskCount++;
                 case "MEDIUM" -> mediumRiskCount++;
                 default -> lowRiskCount++;
+            }
+            switch (snapshot.disposition().getStatus()) {
+                case DISPOSITION_CONFIRMED -> confirmedDispositionCount++;
+                case DISPOSITION_FALSE_POSITIVE -> falsePositiveDispositionCount++;
+                case DISPOSITION_CLOSED -> closedDispositionCount++;
+                default -> pendingReviewDispositionCount++;
             }
         }
 
@@ -120,6 +151,10 @@ public class ExamProctoringService {
             .mediumRiskCount(mediumRiskCount)
             .highRiskCount(highRiskCount)
             .snapshotAlertCount(snapshotAlertCount)
+            .pendingReviewDispositionCount(pendingReviewDispositionCount)
+            .confirmedDispositionCount(confirmedDispositionCount)
+            .falsePositiveDispositionCount(falsePositiveDispositionCount)
+            .closedDispositionCount(closedDispositionCount)
             .recentEvents(buildRecentEvents(context))
             .eventTypeStats(buildEventTypeStats(context.eventsByStudent.values().stream().flatMap(List::stream).toList()))
             .build();
@@ -161,6 +196,7 @@ public class ExamProctoringService {
             .snapshotAlert(snapshot.snapshotAlert())
             .totalOffscreenDurationMs(snapshot.totalOffscreenDurationMs())
             .longOffscreen(snapshot.longOffscreen())
+            .disposition(snapshot.disposition())
             .eventTypeStats(buildEventTypeStats(events))
             .events(events.stream()
                 .sorted(Comparator.comparing(AntiCheatEvent::getEventTime).reversed())
@@ -172,6 +208,45 @@ public class ExamProctoringService {
                     .build())
                 .toList())
             .build();
+    }
+
+    @Transactional
+    public ProctoringDispositionView updateStudentDisposition(Long examId,
+                                                              Long studentId,
+                                                              ProctoringDispositionRequest request) {
+        ProctoringContext context = buildContext(examId);
+        if (!context.studentSnapshots.containsKey(studentId)) {
+            throw new BusinessException("学生不在该考试监考范围内");
+        }
+
+        String status = normalizeDispositionStatus(request.getStatus());
+        String remark = normalizeRemark(request.getRemark());
+        Long handlerId = SecurityUtils.getCurrentUserId();
+        LocalDateTime now = LocalDateTime.now();
+
+        ProctoringDisposition disposition = proctoringDispositionMapper.selectOne(
+            new LambdaQueryWrapper<ProctoringDisposition>()
+                .eq(ProctoringDisposition::getExamId, examId)
+                .eq(ProctoringDisposition::getStudentId, studentId)
+        );
+        if (disposition == null) {
+            disposition = new ProctoringDisposition();
+            disposition.setExamId(examId);
+            disposition.setStudentId(studentId);
+            disposition.setStatus(status);
+            disposition.setRemark(remark);
+            disposition.setHandledBy(handlerId);
+            disposition.setHandledAt(now);
+            proctoringDispositionMapper.insert(disposition);
+        } else {
+            disposition.setStatus(status);
+            disposition.setRemark(remark);
+            disposition.setHandledBy(handlerId);
+            disposition.setHandledAt(now);
+            proctoringDispositionMapper.updateById(disposition);
+        }
+
+        return toDispositionView(disposition, SecurityUtils.getCurrentUsername());
     }
 
     private ProctoringContext buildContext(Long examId) {
@@ -255,6 +330,31 @@ public class ExamProctoringService {
                 Collectors.toList()
             ));
 
+        List<ProctoringDisposition> dispositions = studentIds.isEmpty()
+            ? List.of()
+            : proctoringDispositionMapper.selectList(
+                new LambdaQueryWrapper<ProctoringDisposition>()
+                    .eq(ProctoringDisposition::getExamId, examId)
+                    .in(ProctoringDisposition::getStudentId, studentIds)
+            );
+        Map<Long, ProctoringDisposition> dispositionMap = (dispositions == null ? List.<ProctoringDisposition>of() : dispositions)
+            .stream()
+            .collect(Collectors.toMap(
+                ProctoringDisposition::getStudentId,
+                item -> item,
+                this::pickLatestDisposition,
+                LinkedHashMap::new
+            ));
+
+        Set<Long> handlerIds = dispositionMap.values().stream()
+            .map(ProctoringDisposition::getHandledBy)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<Long, User> handlerMap = handlerIds.isEmpty()
+            ? Map.of()
+            : userMapper.selectBatchIds(handlerIds).stream()
+                .collect(Collectors.toMap(User::getId, user -> user, (a, b) -> a));
+
         LocalDateTime now = LocalDateTime.now();
         Map<Long, StudentRiskSnapshot> studentSnapshots = new LinkedHashMap<>();
         for (Long studentId : studentIds) {
@@ -262,7 +362,8 @@ public class ExamProctoringService {
             ExamSession session = sessionMap.get(studentId);
             Submission submission = submissionMap.get(studentId);
             List<AntiCheatEvent> events = eventsByStudent.getOrDefault(studentId, List.of());
-            studentSnapshots.put(studentId, buildStudentSnapshot(exam, studentId, user, classNamesByStudent.getOrDefault(studentId, List.of()), session, submission, events, now));
+            ProctoringDispositionView disposition = toDispositionView(dispositionMap.get(studentId), handlerMap);
+            studentSnapshots.put(studentId, buildStudentSnapshot(exam, studentId, user, classNamesByStudent.getOrDefault(studentId, List.of()), session, submission, events, disposition, now));
         }
 
         return new ProctoringContext(exam, studentSnapshots, eventsByStudent);
@@ -275,6 +376,7 @@ public class ExamProctoringService {
                                                      ExamSession session,
                                                      Submission submission,
                                                      List<AntiCheatEvent> events,
+                                                     ProctoringDispositionView disposition,
                                                      LocalDateTime now) {
         int riskScore = 0;
         Map<String, Deque<LocalDateTime>> recentEventsByType = new HashMap<>();
@@ -332,7 +434,8 @@ public class ExamProctoringService {
             session != null && SessionStatus.ANSWERING.name().equals(session.getStatus()),
             snapshotGap.alert(),
             totalOffscreenDurationMs,
-            longOffscreen
+            longOffscreen,
+            disposition
         );
     }
 
@@ -453,7 +556,89 @@ public class ExamProctoringService {
             .snapshotAlert(snapshot.snapshotAlert())
             .totalOffscreenDurationMs(snapshot.totalOffscreenDurationMs())
             .longOffscreen(snapshot.longOffscreen())
+            .disposition(snapshot.disposition())
             .build();
+    }
+
+    private ProctoringDisposition pickLatestDisposition(ProctoringDisposition left, ProctoringDisposition right) {
+        if (left == null) {
+            return right;
+        }
+        if (right == null) {
+            return left;
+        }
+        LocalDateTime leftAnchor = left.getHandledAt() == null ? left.getUpdateTime() : left.getHandledAt();
+        LocalDateTime rightAnchor = right.getHandledAt() == null ? right.getUpdateTime() : right.getHandledAt();
+        if (leftAnchor == null && rightAnchor == null) {
+            return Objects.compare(left.getId(), right.getId(), Long::compareTo) >= 0 ? left : right;
+        }
+        if (leftAnchor == null) {
+            return right;
+        }
+        if (rightAnchor == null) {
+            return left;
+        }
+        return leftAnchor.isAfter(rightAnchor) ? left : right;
+    }
+
+    private ProctoringDispositionView toDispositionView(ProctoringDisposition disposition, Map<Long, User> handlerMap) {
+        if (disposition == null) {
+            return defaultDispositionView();
+        }
+        User handler = disposition.getHandledBy() == null ? null : handlerMap.get(disposition.getHandledBy());
+        return ProctoringDispositionView.builder()
+            .status(normalizeStoredDispositionStatus(disposition.getStatus()))
+            .remark(disposition.getRemark())
+            .handledBy(disposition.getHandledBy())
+            .handledByName(handler == null ? null : coalesce(handler.getRealName(), handler.getUsername()))
+            .handledAt(disposition.getHandledAt())
+            .build();
+    }
+
+    private ProctoringDispositionView toDispositionView(ProctoringDisposition disposition, String handlerName) {
+        if (disposition == null) {
+            return defaultDispositionView();
+        }
+        return ProctoringDispositionView.builder()
+            .status(normalizeStoredDispositionStatus(disposition.getStatus()))
+            .remark(disposition.getRemark())
+            .handledBy(disposition.getHandledBy())
+            .handledByName(coalesce(handlerName, disposition.getHandledBy() == null ? null : "用户" + disposition.getHandledBy()))
+            .handledAt(disposition.getHandledAt())
+            .build();
+    }
+
+    private ProctoringDispositionView defaultDispositionView() {
+        return ProctoringDispositionView.builder()
+            .status(DISPOSITION_PENDING_REVIEW)
+            .build();
+    }
+
+    private String normalizeStoredDispositionStatus(String status) {
+        if (status == null) {
+            return DISPOSITION_PENDING_REVIEW;
+        }
+        String normalized = status.trim().toUpperCase();
+        return DISPOSITION_STATUSES.contains(normalized) ? normalized : DISPOSITION_PENDING_REVIEW;
+    }
+
+    private String normalizeDispositionStatus(String status) {
+        String normalized = status == null ? "" : status.trim().toUpperCase();
+        if (!DISPOSITION_STATUSES.contains(normalized)) {
+            throw new BusinessException("无效的处置状态");
+        }
+        return normalized;
+    }
+
+    private String normalizeRemark(String remark) {
+        if (remark == null) {
+            return null;
+        }
+        String normalized = remark.trim();
+        if (normalized.length() > 500) {
+            throw new BusinessException("处置备注不能超过500字");
+        }
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private ExamSession pickLatestSession(ExamSession left, ExamSession right) {
@@ -531,7 +716,8 @@ public class ExamProctoringService {
                                        boolean answering,
                                        boolean snapshotAlert,
                                        Long totalOffscreenDurationMs,
-                                       boolean longOffscreen) {
+                                       boolean longOffscreen,
+                                       ProctoringDispositionView disposition) {
     }
 
     private record ProctoringContext(Exam exam,

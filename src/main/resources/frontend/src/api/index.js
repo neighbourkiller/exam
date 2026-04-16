@@ -30,6 +30,8 @@ export const studentExamResultsApi = () => http.get('/exams/student/results')
 export const proctoringOverviewApi = (examId) => http.get(`/exams/${examId}/proctoring/overview`)
 export const proctoringStudentsApi = (examId) => http.get(`/exams/${examId}/proctoring/students`)
 export const proctoringTimelineApi = (examId, studentId) => http.get(`/exams/${examId}/proctoring/students/${studentId}/timeline`)
+export const updateProctoringDispositionApi = (examId, studentId, data) =>
+  http.put(`/exams/${examId}/proctoring/students/${studentId}/disposition`, data)
 export const startExamApi = (id) => http.post(`/exams/${id}/start`)
 export const snapshotApi = (id, data) => http.post(`/exams/${id}/snapshot`, data)
 export const submitExamApi = (id, data) => http.post(`/exams/${id}/submit`, data)

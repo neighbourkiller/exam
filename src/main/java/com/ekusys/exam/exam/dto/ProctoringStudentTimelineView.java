@@ -26,6 +26,7 @@ public class ProctoringStudentTimelineView {
     private Boolean snapshotAlert;
     private Long totalOffscreenDurationMs;
     private Boolean longOffscreen;
+    private ProctoringDispositionView disposition;
     private List<ProctoringEventStatView> eventTypeStats;
     private List<ProctoringTimelineEventView> events;
 }

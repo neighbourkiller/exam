@@ -29,6 +29,7 @@ class FlywayLayoutTest {
         );
 
         assertTrue(yaml.contains("classpath:db/migration,classpath:db/dev-seed"));
+        assertTrue(yaml.contains("out-of-order: true"));
         assertTrue(!yaml.contains("password123"));
     }
 

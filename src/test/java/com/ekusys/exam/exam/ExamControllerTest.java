@@ -1,6 +1,7 @@
 package com.ekusys.exam.exam;
 
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -10,6 +11,7 @@ import com.ekusys.exam.common.security.AuthRateLimitFilter;
 import com.ekusys.exam.common.security.JwtAuthenticationFilter;
 import com.ekusys.exam.common.security.AuthRateLimitService;
 import com.ekusys.exam.exam.controller.ExamController;
+import com.ekusys.exam.exam.dto.ProctoringDispositionView;
 import com.ekusys.exam.exam.dto.StartExamResponse;
 import com.ekusys.exam.exam.dto.SubmitResultView;
 import com.ekusys.exam.exam.service.ExamProctoringService;
@@ -117,6 +119,33 @@ class ExamControllerTest {
             .andExpect(jsonPath("$.data.submissionId").value(100))
             .andExpect(jsonPath("$.data.totalScore").value(60))
             .andExpect(jsonPath("$.data.status").value("GRADED"));
+    }
+
+    @Test
+    void updateProctoringDispositionShouldReturnSavedDisposition() throws Exception {
+        when(examProctoringService.updateStudentDisposition(
+            org.mockito.ArgumentMatchers.eq(1L),
+            org.mockito.ArgumentMatchers.eq(1001L),
+            org.mockito.ArgumentMatchers.any()
+        )).thenReturn(ProctoringDispositionView.builder()
+            .status("CONFIRMED")
+            .remark("已核查")
+            .handledBy(200L)
+            .handledByName("teacher1")
+            .handledAt(LocalDateTime.of(2026, 4, 16, 12, 0))
+            .build());
+
+        mockMvc.perform(put("/api/v1/exams/1/proctoring/students/1001/disposition")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(java.util.Map.of(
+                    "status", "CONFIRMED",
+                    "remark", "已核查"
+                ))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.status").value("CONFIRMED"))
+            .andExpect(jsonPath("$.data.remark").value("已核查"))
+            .andExpect(jsonPath("$.data.handledByName").value("teacher1"));
     }
 }
 
