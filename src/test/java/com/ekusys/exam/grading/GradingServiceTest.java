@@ -195,7 +195,7 @@ class GradingServiceTest {
         try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
             mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
 
-            List<PendingQuestionAnswerView> result = gradingService.pendingQuestionAnswers(101L, 501L);
+            List<PendingQuestionAnswerView> result = gradingService.pendingQuestionAnswers(501L, 101L);
 
             assertEquals(2, result.size());
             assertEquals("Alice", result.get(0).getStudentName());
