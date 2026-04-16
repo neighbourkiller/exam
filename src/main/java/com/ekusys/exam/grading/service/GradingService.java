@@ -179,7 +179,7 @@ public class GradingService {
             .toList();
     }
 
-    public List<PendingQuestionAnswerView> pendingQuestionAnswers(Long examId, Long questionId) {
+    public List<PendingQuestionAnswerView> pendingQuestionAnswers(Long questionId, Long examId) {
         Exam exam = examMapper.selectById(examId);
         examPermissionService.ensureCanManageExam(exam, "无权限批阅该考试");
 

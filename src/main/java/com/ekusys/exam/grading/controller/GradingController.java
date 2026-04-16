@@ -43,7 +43,7 @@ public class GradingController {
     @GetMapping("/pending/questions/{questionId}/answers")
     public ApiResponse<List<PendingQuestionAnswerView>> pendingQuestionAnswers(@PathVariable Long questionId,
                                                                                @RequestParam Long examId) {
-        return ApiResponse.ok(gradingService.pendingQuestionAnswers(examId, questionId));
+        return ApiResponse.ok(gradingService.pendingQuestionAnswers(questionId, examId));
     }
 
     @PostMapping("/{submissionId}/subjective-score")

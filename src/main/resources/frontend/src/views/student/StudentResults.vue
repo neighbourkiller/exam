@@ -1,68 +1,80 @@
 <template>
   <div class="results-page">
-    <section class="results-hero">
-      <div>
-        <h1 class="results-title">考试结果中心</h1>
+    <section class="results-hero glass-card">
+      <div class="hero-content">
+        <h1 class="results-title">
+          <span class="title-icon">📊</span> 考试结果中心
+        </h1>
         <p class="results-subtitle">查看全部考试与成绩状态，包含待阅卷与未交卷记录。</p>
       </div>
-      <el-button type="primary" plain @click="loadResults">刷新数据</el-button>
+      <el-button type="primary" round @click="loadResults" class="refresh-btn">刷新数据</el-button>
     </section>
 
     <section class="metrics-row">
-      <article class="metric-item">
+      <article class="metric-item glass-card hover-lift" style="animation-delay: 0.1s">
         <div class="metric-label">总考试数</div>
-        <div class="metric-value">{{ metrics.totalCount }}</div>
+        <div class="metric-value text-brand">{{ metrics.totalCount }}</div>
       </article>
-      <article class="metric-item">
+      <article class="metric-item glass-card hover-lift" style="animation-delay: 0.2s">
         <div class="metric-label">已交卷</div>
-        <div class="metric-value">{{ metrics.submittedCount }}</div>
+        <div class="metric-value text-blue">{{ metrics.submittedCount }}</div>
       </article>
-      <article class="metric-item">
+      <article class="metric-item glass-card hover-lift" style="animation-delay: 0.3s">
         <div class="metric-label">已出分</div>
-        <div class="metric-value">{{ metrics.gradedCount }}</div>
+        <div class="metric-value text-green">{{ metrics.gradedCount }}</div>
       </article>
-      <article class="metric-item">
+      <article class="metric-item glass-card hover-lift" style="animation-delay: 0.4s">
         <div class="metric-label">已通过</div>
-        <div class="metric-value">{{ metrics.passCount }}</div>
+        <div class="metric-value text-orange">{{ metrics.passCount }}</div>
       </article>
     </section>
 
-    <section class="table-section">
-      <el-table :data="rows" border stripe>
+    <section class="table-section glass-card">
+      <el-table :data="rows" class="custom-table" style="width: 100%"
+        :header-cell-style="{ background: 'transparent', color: 'var(--brand)', fontWeight: '600', borderBottom: '1px solid rgba(13, 148, 136, 0.2)' }"
+        :row-style="{ background: 'transparent' }">
         <el-table-column label="课程" width="170">
-          <template #default="{ row }">{{ row.subjectName || '--' }}</template>
+          <template #default="{ row }"><span class="fw-semibold">{{ row.subjectName || '--' }}</span></template>
         </el-table-column>
         <el-table-column prop="name" label="考试名称" min-width="180" />
-        <el-table-column label="开始时间" width="180">
-          <template #default="{ row }">{{ formatDateTime(row.startTime) }}</template>
+        <el-table-column label="开始时间" width="160">
+          <template #default="{ row }"><span class="text-muted">{{ formatDateTime(row.startTime) }}</span></template>
         </el-table-column>
-        <el-table-column label="结束时间" width="180">
-          <template #default="{ row }">{{ formatDateTime(row.endTime) }}</template>
+        <el-table-column label="结束时间" width="160">
+          <template #default="{ row }"><span class="text-muted">{{ formatDateTime(row.endTime) }}</span></template>
         </el-table-column>
         <el-table-column label="考试状态" width="110">
           <template #default="{ row }">
-            <el-tag size="small" :type="examStatusTagType(row.examStatus)">{{ examStatusText(row.examStatus) }}</el-tag>
+            <el-tag size="small" :type="examStatusTagType(row.examStatus)" round effect="light">{{ examStatusText(row.examStatus) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="提交状态" width="110">
           <template #default="{ row }">
-            <el-tag size="small" :type="submissionStatusTagType(row)">{{ submissionStatusText(row) }}</el-tag>
+            <el-tag size="small" :type="submissionStatusTagType(row)" round effect="light">{{ submissionStatusText(row) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="客观分" width="90">
-          <template #default="{ row }">{{ formatScore(row.objectiveScore) }}</template>
-        </el-table-column>
-        <el-table-column label="主观分" width="90">
-          <template #default="{ row }">{{ formatScore(row.subjectiveScore) }}</template>
+        <el-table-column label="主客观分" width="140">
+          <template #default="{ row }">
+            <div class="score-split">
+              <span>客: {{ formatScore(row.objectiveScore) }}</span>
+              <span class="divider">|</span>
+              <span>主: {{ formatScore(row.subjectiveScore) }}</span>
+            </div>
+          </template>
         </el-table-column>
         <el-table-column label="总分" width="90">
-          <template #default="{ row }">{{ formatScore(row.totalScore) }}</template>
+          <template #default="{ row }">
+            <strong class="total-score" :class="{ 'text-green': row.passFlag, 'text-red': row.passFlag === false }">
+              {{ formatScore(row.totalScore) }}
+            </strong>
+          </template>
         </el-table-column>
-        <el-table-column label="是否通过" width="100">
-          <template #default="{ row }">{{ passText(row.passFlag) }}</template>
-        </el-table-column>
-        <el-table-column label="提交时间" width="180">
-          <template #default="{ row }">{{ formatDateTime(row.submittedAt) }}</template>
+        <el-table-column label="是否通过" width="90">
+          <template #default="{ row }">
+            <span :class="{ 'pass-text': row.passFlag, 'fail-text': row.passFlag === false }">
+              {{ passText(row.passFlag) }}
+            </span>
+          </template>
         </el-table-column>
       </el-table>
     </section>
@@ -138,79 +150,130 @@ onMounted(loadResults)
 <style scoped>
 .results-page {
   display: grid;
-  gap: 16px;
+  gap: 20px;
+  padding: 10px;
 }
 
 .results-hero {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
-  padding: 18px 20px;
-  border-radius: 12px;
-  border: 1px solid #d9ebe7;
-  background: linear-gradient(120deg, #ecf9f6 0%, #f6fbfa 100%);
+  align-items: center;
+  padding: 24px 32px;
+  background: linear-gradient(135deg, rgba(204, 251, 241, 0.7) 0%, rgba(255, 255, 255, 0.4) 100%);
+  border-left: 4px solid var(--brand);
+}
+
+.hero-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .results-title {
   margin: 0;
-  font-size: 22px;
-  line-height: 1.2;
-  color: #0f3f38;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--brand);
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .results-subtitle {
-  margin: 8px 0 0;
-  color: #4b6b67;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.refresh-btn {
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.2);
 }
 
 .metrics-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 20px;
 }
 
 .metric-item {
-  padding: 14px 16px;
-  border-radius: 10px;
-  border: 1px solid #e4ecea;
-  background: #ffffff;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  animation: fadeUp 0.6s ease-out backwards;
 }
 
 .metric-label {
-  color: #6b7280;
-  font-size: 13px;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .metric-value {
-  margin-top: 6px;
-  color: #0f172a;
-  font-size: 26px;
-  font-weight: 700;
+  font-size: 36px;
+  font-weight: 800;
   line-height: 1;
 }
 
+.text-brand { color: var(--brand); }
+.text-blue { color: #3b82f6; }
+.text-green { color: #10b981; }
+.text-orange { color: #f59e0b; }
+.text-red { color: #ef4444; }
+
 .table-section {
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 12px;
+  padding: 20px;
+}
+
+.score-split {
+  display: flex;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.divider { color: #cbd5e1; }
+
+.total-score {
+  font-size: 16px;
+}
+
+.pass-text {
+  color: #10b981;
+  font-weight: 600;
+}
+.fail-text {
+  color: #ef4444;
+  font-weight: 600;
+}
+.fw-semibold { font-weight: 600; }
+.text-muted { color: var(--text-muted); font-size: 13px; }
+
+/* Make table transparent for glassmorphism */
+:deep(.el-table), :deep(.el-table__expanded-cell) {
+  background-color: transparent !important;
+}
+:deep(.el-table tr), :deep(.el-table td.el-table__cell) {
+  background-color: transparent !important;
+  border-bottom: 1px solid rgba(13, 148, 136, 0.08);
+}
+:deep(.el-table::before) { display: none; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @media (max-width: 1100px) {
-  .metrics-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+  .metrics-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 720px) {
   .results-hero {
     flex-direction: column;
     align-items: flex-start;
-    gap: 12px;
   }
-
-  .metrics-row {
-    grid-template-columns: 1fr;
-  }
+  .metrics-row { grid-template-columns: 1fr; }
 }
 </style>
