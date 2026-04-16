@@ -1,6 +1,7 @@
 package com.ekusys.exam.exam.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.ekusys.exam.common.enums.SessionStatus;
 import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.common.security.SecurityUtils;
@@ -46,6 +47,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -214,10 +216,7 @@ public class ExamProctoringService {
     public ProctoringDispositionView updateStudentDisposition(Long examId,
                                                               Long studentId,
                                                               ProctoringDispositionRequest request) {
-        ProctoringContext context = buildContext(examId);
-        if (!context.studentSnapshots.containsKey(studentId)) {
-            throw new BusinessException("学生不在该考试监考范围内");
-        }
+        validateStudentInProctoringScope(examId, studentId);
 
         String status = normalizeDispositionStatus(request.getStatus());
         String remark = normalizeRemark(request.getRemark());
@@ -237,7 +236,13 @@ public class ExamProctoringService {
             disposition.setRemark(remark);
             disposition.setHandledBy(handlerId);
             disposition.setHandledAt(now);
-            proctoringDispositionMapper.insert(disposition);
+            try {
+                proctoringDispositionMapper.insert(disposition);
+            } catch (DuplicateKeyException ex) {
+                updateDispositionByScope(examId, studentId, status, remark, handlerId, now);
+                disposition.setHandledBy(handlerId);
+                disposition.setHandledAt(now);
+            }
         } else {
             disposition.setStatus(status);
             disposition.setRemark(remark);
@@ -247,6 +252,48 @@ public class ExamProctoringService {
         }
 
         return toDispositionView(disposition, SecurityUtils.getCurrentUsername());
+    }
+
+    private void validateStudentInProctoringScope(Long examId, Long studentId) {
+        Exam exam = examMapper.selectById(examId);
+        examPermissionService.ensureCanManageExam(exam, "无权限查看该考试监考信息");
+
+        List<ExamTargetClass> targetClasses = examTargetClassMapper.selectList(
+            new LambdaQueryWrapper<ExamTargetClass>().eq(ExamTargetClass::getExamId, examId)
+        );
+        Set<Long> targetClassIds = targetClasses.stream()
+            .map(ExamTargetClass::getClassId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (targetClassIds.isEmpty()) {
+            throw new BusinessException("学生不在该考试监考范围内");
+        }
+
+        Long enrollmentCount = studentTeachingClassMapper.selectCount(
+            new LambdaQueryWrapper<StudentTeachingClass>()
+                .eq(StudentTeachingClass::getStudentId, studentId)
+                .in(StudentTeachingClass::getTeachingClassId, targetClassIds)
+                .eq(StudentTeachingClass::getEnrollStatus, ENROLL_STATUS_ACTIVE)
+        );
+        if (enrollmentCount == null || enrollmentCount == 0L) {
+            throw new BusinessException("学生不在该考试监考范围内");
+        }
+    }
+
+    private void updateDispositionByScope(Long examId,
+                                          Long studentId,
+                                          String status,
+                                          String remark,
+                                          Long handlerId,
+                                          LocalDateTime handledAt) {
+        ProctoringDisposition update = new ProctoringDisposition();
+        update.setStatus(status);
+        update.setRemark(remark);
+        update.setHandledBy(handlerId);
+        update.setHandledAt(handledAt);
+        proctoringDispositionMapper.update(update, new LambdaUpdateWrapper<ProctoringDisposition>()
+            .eq(ProctoringDisposition::getExamId, examId)
+            .eq(ProctoringDisposition::getStudentId, studentId));
     }
 
     private ProctoringContext buildContext(Long examId) {

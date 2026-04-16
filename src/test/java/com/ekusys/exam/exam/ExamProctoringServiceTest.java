@@ -48,6 +48,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DuplicateKeyException;
 
 @ExtendWith(MockitoExtension.class)
 class ExamProctoringServiceTest {
@@ -278,7 +279,6 @@ class ExamProctoringServiceTest {
     @Test
     void updateStudentDispositionShouldInsertNewRecord() {
         stubOneStudentProctoringContext();
-        when(proctoringDispositionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
         when(proctoringDispositionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
 
         ProctoringDispositionRequest request = dispositionRequest("CONFIRMED", "  已电话核查  ");
@@ -307,7 +307,6 @@ class ExamProctoringServiceTest {
         stubOneStudentProctoringContext();
         ProctoringDisposition existing = disposition(1L, 1001L, "PENDING_REVIEW", null);
         existing.setId(88L);
-        when(proctoringDispositionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(existing));
         when(proctoringDispositionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(existing);
 
         ProctoringDispositionRequest request = dispositionRequest("FALSE_POSITIVE", "网络波动误报");
@@ -323,6 +322,29 @@ class ExamProctoringServiceTest {
             assertEquals(88L, captor.getValue().getId());
             assertEquals("FALSE_POSITIVE", captor.getValue().getStatus());
             assertEquals("网络波动误报", captor.getValue().getRemark());
+        }
+    }
+
+    @Test
+    void updateStudentDispositionShouldRetryAsUpdateWhenConcurrentInsertWins() {
+        stubOneStudentProctoringContext();
+        when(proctoringDispositionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(proctoringDispositionMapper.insert(any(ProctoringDisposition.class))).thenThrow(new DuplicateKeyException("duplicate"));
+
+        ProctoringDispositionRequest request = dispositionRequest("CLOSED", "并发保存兜底");
+
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+            mocked.when(SecurityUtils::getCurrentUsername).thenReturn("teacher1");
+
+            ProctoringDispositionView result = examProctoringService.updateStudentDisposition(1L, 1001L, request);
+
+            ArgumentCaptor<ProctoringDisposition> captor = ArgumentCaptor.forClass(ProctoringDisposition.class);
+            verify(proctoringDispositionMapper).update(captor.capture(), any());
+            assertEquals("CLOSED", captor.getValue().getStatus());
+            assertEquals("并发保存兜底", captor.getValue().getRemark());
+            assertEquals(200L, captor.getValue().getHandledBy());
+            assertEquals("CLOSED", result.getStatus());
         }
     }
 
@@ -344,8 +366,7 @@ class ExamProctoringServiceTest {
         when(examMapper.selectById(1L)).thenReturn(exam);
         when(userMapper.selectRoleCodes(200L)).thenReturn(List.of("TEACHER"));
         when(examTargetClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(buildTargetClass(1L, 11L)));
-        when(teachingClassMapper.selectBatchIds(any())).thenReturn(List.of(buildTeachingClass(11L, "一班")));
-        when(studentTeachingClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(studentTeachingClassMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
 
         try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
             mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
@@ -383,12 +404,7 @@ class ExamProctoringServiceTest {
         when(examMapper.selectById(1L)).thenReturn(exam);
         when(userMapper.selectRoleCodes(200L)).thenReturn(List.of("TEACHER"));
         when(examTargetClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(buildTargetClass(1L, 11L)));
-        when(teachingClassMapper.selectBatchIds(any())).thenReturn(List.of(buildTeachingClass(11L, "一班")));
-        when(studentTeachingClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(buildEnrollment(1001L, 11L)));
-        when(userMapper.selectBatchIds(any())).thenReturn(List.of(buildUser(1001L, "alice", "Alice")));
-        when(examSessionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
-        when(submissionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
-        when(antiCheatEventMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(studentTeachingClassMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(1L);
     }
 
     private ExamTargetClass buildTargetClass(Long examId, Long classId) {
@@ -471,7 +487,6 @@ class ExamProctoringServiceTest {
 
     private ProctoringDisposition disposition(Long examId, Long studentId, String status, String remark) {
         ProctoringDisposition disposition = new ProctoringDisposition();
-        disposition.setId(studentId);
         disposition.setExamId(examId);
         disposition.setStudentId(studentId);
         disposition.setStatus(status);
