@@ -76,7 +76,7 @@
           </div>
         </div>
 
-        <el-table :data="filteredStudents" border stripe>
+        <el-table :data="filteredStudents" stripe>
           <el-table-column prop="studentName" label="学生" min-width="130" />
           <el-table-column label="班级" min-width="140">
             <template #default="{ row }">{{ formatClassNames(row.classNames) }}</template>
@@ -691,4 +691,65 @@ onBeforeUnmount(() => {
     width: 100%;
   }
 }
+
+.page-card {
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.02);
+  background-color: #ffffff;
+}
+
+:deep(.el-card__header) {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.header { 
+  font-size: 20px; 
+  font-weight: 700; 
+  color: #1e293b;
+}
+
+:deep(.el-table) {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+:deep(.el-table th.el-table__cell) {
+  background-color: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+:deep(.el-table td.el-table__cell) {
+  border-bottom: 1px solid #f1f5f9;
+  padding: 12px 0;
+}
+
+:deep(.el-table--enable-row-hover .el-table__body tr:hover > td.el-table__cell) {
+  background-color: #f8fafc;
+}
+
+:deep(.el-input__wrapper), :deep(.el-select__wrapper) {
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px #e2e8f0 inset;
+  background-color: #f8fafc;
+  transition: all 0.2s ease;
+}
+
+:deep(.el-input__wrapper.is-focus), :deep(.el-select__wrapper.is-focus) {
+  box-shadow: 0 0 0 2px #bfdbfe inset, 0 0 0 1px #3b82f6 inset;
+  background-color: #ffffff;
+}
+
+:deep(.el-button) {
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+:deep(.el-dialog) {
+  border-radius: 16px;
+}
+
 </style>

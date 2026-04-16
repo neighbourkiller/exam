@@ -119,9 +119,9 @@ const logout = async () => {
   border-left: none !important;
   border-right: none !important;
   border-top: none !important;
-  border-bottom: 1px solid rgba(13, 148, 136, 0.1) !important;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.1) !important;
   background: rgba(255, 255, 255, 0.85) !important;
-  box-shadow: 0 4px 24px rgba(13, 148, 136, 0.05) !important;
+  box-shadow: 0 4px 24px rgba(59, 130, 246, 0.05) !important;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
@@ -174,14 +174,14 @@ const logout = async () => {
 :deep(.el-menu--horizontal > .el-menu-item:hover),
 :deep(.el-menu--horizontal > .el-sub-menu:hover .el-sub-menu__title) {
   color: var(--brand) !important;
-  background: rgba(13, 148, 136, 0.04) !important;
+  background: rgba(59, 130, 246, 0.04) !important;
 }
 
 :deep(.el-menu--horizontal > .el-menu-item.is-active),
 :deep(.el-menu--horizontal > .el-sub-menu.is-active .el-sub-menu__title) {
   color: var(--brand) !important;
   border-bottom: 2px solid var(--brand) !important;
-  background: rgba(13, 148, 136, 0.06) !important;
+  background: rgba(59, 130, 246, 0.06) !important;
 }
 
 .user-actions {
@@ -207,7 +207,7 @@ const logout = async () => {
   justify-content: center;
   font-weight: 700;
   font-size: 14px;
-  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.2);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
 }
 
 .username {

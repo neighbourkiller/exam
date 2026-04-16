@@ -7,7 +7,7 @@
       <el-form-item><el-button type="primary" @click="load">查询</el-button></el-form-item>
     </el-form>
 
-    <el-table :data="users" border>
+    <el-table :data="users">
       <el-table-column prop="id" label="ID" width="120" />
       <el-table-column prop="username" label="用户名" width="130" />
       <el-table-column prop="realName" label="姓名" width="130" />
@@ -291,5 +291,66 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.header { font-size: 18px; font-weight: 700; }
+
+
+.page-card {
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.02);
+  background-color: #ffffff;
+}
+
+:deep(.el-card__header) {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.header { 
+  font-size: 20px; 
+  font-weight: 700; 
+  color: #1e293b;
+}
+
+:deep(.el-table) {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+:deep(.el-table th.el-table__cell) {
+  background-color: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+:deep(.el-table td.el-table__cell) {
+  border-bottom: 1px solid #f1f5f9;
+  padding: 12px 0;
+}
+
+:deep(.el-table--enable-row-hover .el-table__body tr:hover > td.el-table__cell) {
+  background-color: #f8fafc;
+}
+
+:deep(.el-input__wrapper), :deep(.el-select__wrapper) {
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px #e2e8f0 inset;
+  background-color: #f8fafc;
+  transition: all 0.2s ease;
+}
+
+:deep(.el-input__wrapper.is-focus), :deep(.el-select__wrapper.is-focus) {
+  box-shadow: 0 0 0 2px #bfdbfe inset, 0 0 0 1px #3b82f6 inset;
+  background-color: #ffffff;
+}
+
+:deep(.el-button) {
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+:deep(.el-dialog) {
+  border-radius: 16px;
+}
+
 </style>
