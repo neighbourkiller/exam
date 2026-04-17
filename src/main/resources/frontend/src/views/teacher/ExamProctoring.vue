@@ -290,6 +290,11 @@
         </div>
         </div>
       </template>
+      <template v-else>
+        <div v-loading="timelineLoading" class="drawer-content drawer-content--empty">
+          <el-empty v-if="!timelineLoading" description="学生监考详情加载失败，请重新打开" />
+        </div>
+      </template>
     </el-drawer>
   </div>
 </template>
@@ -327,6 +332,7 @@ const dispositionForm = reactive({
 })
 
 let refreshTimer = null
+let timelineLoadSeq = 0
 
 const DISPOSITION_OPTIONS = [
   { label: '待核查', value: 'PENDING_REVIEW' },
@@ -512,32 +518,51 @@ const hydrateDispositionForm = () => {
   dispositionForm.remark = timeline.value?.disposition?.remark || ''
 }
 
-const loadTimeline = async (studentId) => {
-  timeline.value = await proctoringTimelineApi(selectedExamId.value, studentId)
+const resetTimelineState = () => {
+  timeline.value = null
   hydrateDispositionForm()
+}
+
+const loadTimeline = async (studentId, loadSeq = timelineLoadSeq) => {
+  const data = await proctoringTimelineApi(selectedExamId.value, studentId)
+  if (loadSeq !== timelineLoadSeq) {
+    return false
+  }
+  timeline.value = data
+  hydrateDispositionForm()
+  return true
 }
 
 const openTimeline = async (row) => {
   if (!selectedExamId.value) {
     return
   }
+  const loadSeq = ++timelineLoadSeq
   drawerVisible.value = true
   timelineLoading.value = true
+  resetTimelineState()
   try {
-    await loadTimeline(row.studentId)
+    await loadTimeline(row.studentId, loadSeq)
   } catch (error) {
-    ElMessage.error(error?.message || '加载学生详情失败')
+    if (loadSeq === timelineLoadSeq) {
+      resetTimelineState()
+      ElMessage.error(error?.message || '加载学生详情失败')
+    }
   } finally {
-    timelineLoading.value = false
+    if (loadSeq === timelineLoadSeq) {
+      timelineLoading.value = false
+    }
   }
 }
 
 const saveDisposition = async () => {
-  if (!selectedExamId.value || !timeline.value?.studentId) {
+  const currentTimeline = timeline.value
+  if (!selectedExamId.value || !currentTimeline?.studentId) {
     return
   }
   dispositionSaving.value = true
-  const studentId = timeline.value.studentId
+  const studentId = currentTimeline.studentId
+  const loadSeq = timelineLoadSeq
   try {
     await updateProctoringDispositionApi(selectedExamId.value, studentId, {
       status: dispositionForm.status,
@@ -546,7 +571,7 @@ const saveDisposition = async () => {
     ElMessage.success('处置记录已保存')
     await Promise.all([
       loadDashboard(false),
-      loadTimeline(studentId)
+      loadTimeline(studentId, loadSeq)
     ])
   } catch (error) {
     ElMessage.error(error?.message || '保存处置记录失败')
@@ -556,6 +581,9 @@ const saveDisposition = async () => {
 }
 
 watch(activeTab, async () => {
+  timelineLoadSeq += 1
+  drawerVisible.value = false
+  resetTimelineState()
   ensureSelectedExam()
   syncRouteQuery()
   await loadDashboard()
@@ -563,6 +591,9 @@ watch(activeTab, async () => {
 })
 
 watch(selectedExamId, async () => {
+  timelineLoadSeq += 1
+  drawerVisible.value = false
+  resetTimelineState()
   syncRouteQuery()
   await loadDashboard()
   startPollingIfNeeded()
