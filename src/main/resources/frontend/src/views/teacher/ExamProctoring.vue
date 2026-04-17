@@ -54,6 +54,22 @@
         <span>快照异常</span>
         <strong>{{ overview.snapshotAlertCount }}</strong>
       </article>
+      <article class="summary-card">
+        <span>待核查</span>
+        <strong>{{ overview.pendingReviewDispositionCount || 0 }}</strong>
+      </article>
+      <article class="summary-card summary-card--warn">
+        <span>已确认</span>
+        <strong>{{ overview.confirmedDispositionCount || 0 }}</strong>
+      </article>
+      <article class="summary-card">
+        <span>误报</span>
+        <strong>{{ overview.falsePositiveDispositionCount || 0 }}</strong>
+      </article>
+      <article class="summary-card">
+        <span>已关闭</span>
+        <strong>{{ overview.closedDispositionCount || 0 }}</strong>
+      </article>
     </section>
 
     <section v-if="overview" class="content-grid">
@@ -72,6 +88,14 @@
               <el-option label="MEDIUM" value="MEDIUM" />
               <el-option label="HIGH" value="HIGH" />
             </el-select>
+            <el-select v-model="dispositionFilter" clearable placeholder="处置状态" class="filter-item">
+              <el-option
+                v-for="item in DISPOSITION_OPTIONS"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
             <el-input v-model="keyword" clearable placeholder="搜索姓名或账号" class="filter-item" />
           </div>
         </div>
@@ -87,6 +111,13 @@
             </template>
           </el-table-column>
           <el-table-column prop="riskScore" label="风险分" width="90" />
+          <el-table-column label="处置状态" width="110">
+            <template #default="{ row }">
+              <el-tag :type="dispositionTagType(row.disposition?.status)" size="small">
+                {{ dispositionLabel(row.disposition?.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
           <el-table-column prop="eventCount" label="异常次数" width="100" />
           <el-table-column label="最近事件" min-width="140">
             <template #default="{ row }">{{ formatEventType(row.latestEventType) }}</template>
@@ -176,6 +207,7 @@
 
     <el-drawer v-model="drawerVisible" title="学生监考详情" size="42%">
       <template v-if="timeline">
+        <div v-loading="timelineLoading" class="drawer-content">
         <div class="timeline-summary">
           <div class="timeline-pill">
             <span>学生</span>
@@ -189,12 +221,53 @@
             <span>快照状态</span>
             <strong>{{ timeline.snapshotAlert ? '异常' : '正常' }}</strong>
           </div>
+          <div class="timeline-pill">
+            <span>处置状态</span>
+            <strong>{{ dispositionLabel(timeline.disposition?.status) }}</strong>
+          </div>
         </div>
 
         <div class="timeline-meta">
           <p>班级：{{ formatClassNames(timeline.classNames) }}</p>
           <p>累计离屏：{{ formatDuration(timeline.totalOffscreenDurationMs) }}</p>
           <p>最近快照：{{ formatDateTime(timeline.lastSnapshotTime) }}</p>
+        </div>
+
+        <div class="disposition-panel">
+          <div class="disposition-panel__header">
+            <div>
+              <h3>处置记录</h3>
+              <p>
+                最近处置：
+                {{ timeline.disposition?.handledByName || '--' }}
+                /
+                {{ formatDateTime(timeline.disposition?.handledAt) }}
+              </p>
+            </div>
+            <el-button type="primary" :loading="dispositionSaving" @click="saveDisposition">保存处置</el-button>
+          </div>
+          <el-form label-position="top" class="disposition-form">
+            <el-form-item label="处置状态">
+              <el-select v-model="dispositionForm.status" style="width: 100%">
+                <el-option
+                  v-for="item in DISPOSITION_OPTIONS"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="处置备注">
+              <el-input
+                v-model="dispositionForm.remark"
+                type="textarea"
+                :rows="3"
+                maxlength="500"
+                show-word-limit
+                placeholder="记录核查结论、误报原因或后续处理说明"
+              />
+            </el-form-item>
+          </el-form>
         </div>
 
         <div class="timeline-stats">
@@ -215,16 +288,22 @@
           </div>
           <el-empty v-if="!timeline.events.length" description="暂无学生异常事件" />
         </div>
+        </div>
+      </template>
+      <template v-else>
+        <div v-loading="timelineLoading" class="drawer-content drawer-content--empty">
+          <el-empty v-if="!timelineLoading" description="学生监考详情加载失败，请重新打开" />
+        </div>
       </template>
     </el-drawer>
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { proctoringOverviewApi, proctoringStudentsApi, proctoringTimelineApi, teacherExamsApi } from '../../api'
+import { proctoringOverviewApi, proctoringStudentsApi, proctoringTimelineApi, teacherExamsApi, updateProctoringDispositionApi } from '../../api'
 import { formatDateTime } from '../../utils/datetime'
 
 const LIVE_STATUSES = new Set(['PUBLISHED', 'ONGOING'])
@@ -244,9 +323,23 @@ const loading = ref(false)
 const timelineLoading = ref(false)
 const classFilter = ref('')
 const riskFilter = ref('')
+const dispositionFilter = ref('')
 const keyword = ref('')
+const dispositionSaving = ref(false)
+const dispositionForm = reactive({
+  status: 'PENDING_REVIEW',
+  remark: ''
+})
 
 let refreshTimer = null
+let timelineLoadSeq = 0
+
+const DISPOSITION_OPTIONS = [
+  { label: '待核查', value: 'PENDING_REVIEW' },
+  { label: '已确认', value: 'CONFIRMED' },
+  { label: '误报', value: 'FALSE_POSITIVE' },
+  { label: '已关闭', value: 'CLOSED' }
+]
 
 const currentExamOptions = computed(() =>
   exams.value.filter((exam) => (activeTab.value === 'live' ? LIVE_STATUSES.has(exam.status) : REPORT_STATUSES.has(exam.status)))
@@ -266,6 +359,9 @@ const filteredStudents = computed(() =>
       return false
     }
     if (riskFilter.value && item.riskLevel !== riskFilter.value) {
+      return false
+    }
+    if (dispositionFilter.value && dispositionStatus(item) !== dispositionFilter.value) {
       return false
     }
     if (!keyword.value) {
@@ -292,6 +388,16 @@ const EVENT_TYPE_MAP = {
 }
 
 const formatEventType = (type) => EVENT_TYPE_MAP[type] || type || '--'
+
+const dispositionStatus = (item) => item?.disposition?.status || 'PENDING_REVIEW'
+const dispositionLabel = (status) =>
+  DISPOSITION_OPTIONS.find((item) => item.value === (status || 'PENDING_REVIEW'))?.label || status || '待核查'
+const dispositionTagType = (status) => {
+  if (status === 'CONFIRMED') return 'danger'
+  if (status === 'FALSE_POSITIVE') return 'success'
+  if (status === 'CLOSED') return 'info'
+  return 'warning'
+}
 
 const riskTagType = (level) => {
   if (level === 'HIGH') return 'danger'
@@ -407,22 +513,77 @@ const refreshAll = async () => {
   startPollingIfNeeded()
 }
 
+const hydrateDispositionForm = () => {
+  dispositionForm.status = timeline.value?.disposition?.status || 'PENDING_REVIEW'
+  dispositionForm.remark = timeline.value?.disposition?.remark || ''
+}
+
+const resetTimelineState = () => {
+  timeline.value = null
+  hydrateDispositionForm()
+}
+
+const loadTimeline = async (studentId, loadSeq = timelineLoadSeq) => {
+  const data = await proctoringTimelineApi(selectedExamId.value, studentId)
+  if (loadSeq !== timelineLoadSeq) {
+    return false
+  }
+  timeline.value = data
+  hydrateDispositionForm()
+  return true
+}
+
 const openTimeline = async (row) => {
   if (!selectedExamId.value) {
     return
   }
+  const loadSeq = ++timelineLoadSeq
   drawerVisible.value = true
   timelineLoading.value = true
+  resetTimelineState()
   try {
-    timeline.value = await proctoringTimelineApi(selectedExamId.value, row.studentId)
+    await loadTimeline(row.studentId, loadSeq)
   } catch (error) {
-    ElMessage.error(error?.message || '加载学生详情失败')
+    if (loadSeq === timelineLoadSeq) {
+      resetTimelineState()
+      ElMessage.error(error?.message || '加载学生详情失败')
+    }
   } finally {
-    timelineLoading.value = false
+    if (loadSeq === timelineLoadSeq) {
+      timelineLoading.value = false
+    }
+  }
+}
+
+const saveDisposition = async () => {
+  const currentTimeline = timeline.value
+  if (!selectedExamId.value || !currentTimeline?.studentId) {
+    return
+  }
+  dispositionSaving.value = true
+  const studentId = currentTimeline.studentId
+  const loadSeq = timelineLoadSeq
+  try {
+    await updateProctoringDispositionApi(selectedExamId.value, studentId, {
+      status: dispositionForm.status,
+      remark: dispositionForm.remark?.trim() || ''
+    })
+    ElMessage.success('处置记录已保存')
+    await Promise.all([
+      loadDashboard(false),
+      loadTimeline(studentId, loadSeq)
+    ])
+  } catch (error) {
+    ElMessage.error(error?.message || '保存处置记录失败')
+  } finally {
+    dispositionSaving.value = false
   }
 }
 
 watch(activeTab, async () => {
+  timelineLoadSeq += 1
+  drawerVisible.value = false
+  resetTimelineState()
   ensureSelectedExam()
   syncRouteQuery()
   await loadDashboard()
@@ -430,6 +591,9 @@ watch(activeTab, async () => {
 })
 
 watch(selectedExamId, async () => {
+  timelineLoadSeq += 1
+  drawerVisible.value = false
+  resetTimelineState()
   syncRouteQuery()
   await loadDashboard()
   startPollingIfNeeded()
@@ -619,9 +783,13 @@ onBeforeUnmount(() => {
   align-content: start;
 }
 
+.drawer-content {
+  min-height: 260px;
+}
+
 .timeline-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -653,6 +821,38 @@ onBeforeUnmount(() => {
 
 .timeline-meta p {
   margin: 0;
+}
+
+.disposition-panel {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  background: #f8fafc;
+}
+
+.disposition-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.disposition-panel__header h3 {
+  margin: 0;
+  color: #0f172a;
+}
+
+.disposition-panel__header p {
+  margin: 6px 0 0;
+  color: #64748b;
+}
+
+.disposition-form {
+  display: grid;
+  gap: 4px;
 }
 
 .timeline-item__payload {

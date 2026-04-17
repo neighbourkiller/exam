@@ -3,15 +3,21 @@ package com.ekusys.exam.exam;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.verify;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ekusys.exam.common.enums.SessionStatus;
+import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.common.security.SecurityUtils;
+import com.ekusys.exam.exam.dto.ProctoringDispositionRequest;
+import com.ekusys.exam.exam.dto.ProctoringDispositionView;
 import com.ekusys.exam.exam.dto.ProctoringOverviewView;
+import com.ekusys.exam.exam.dto.ProctoringStudentView;
 import com.ekusys.exam.exam.dto.ProctoringStudentTimelineView;
 import com.ekusys.exam.exam.service.ExamPermissionService;
 import com.ekusys.exam.exam.service.ExamProctoringService;
@@ -19,6 +25,7 @@ import com.ekusys.exam.repository.entity.AntiCheatEvent;
 import com.ekusys.exam.repository.entity.Exam;
 import com.ekusys.exam.repository.entity.ExamSession;
 import com.ekusys.exam.repository.entity.ExamTargetClass;
+import com.ekusys.exam.repository.entity.ProctoringDisposition;
 import com.ekusys.exam.repository.entity.StudentTeachingClass;
 import com.ekusys.exam.repository.entity.Submission;
 import com.ekusys.exam.repository.entity.TeachingClass;
@@ -27,18 +34,21 @@ import com.ekusys.exam.repository.mapper.AntiCheatEventMapper;
 import com.ekusys.exam.repository.mapper.ExamMapper;
 import com.ekusys.exam.repository.mapper.ExamSessionMapper;
 import com.ekusys.exam.repository.mapper.ExamTargetClassMapper;
+import com.ekusys.exam.repository.mapper.ProctoringDispositionMapper;
 import com.ekusys.exam.repository.mapper.StudentTeachingClassMapper;
 import com.ekusys.exam.repository.mapper.SubmissionMapper;
 import com.ekusys.exam.repository.mapper.TeachingClassMapper;
 import com.ekusys.exam.repository.mapper.UserMapper;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DuplicateKeyException;
 
 @ExtendWith(MockitoExtension.class)
 class ExamProctoringServiceTest {
@@ -67,6 +77,9 @@ class ExamProctoringServiceTest {
     @Mock
     private AntiCheatEventMapper antiCheatEventMapper;
 
+    @Mock
+    private ProctoringDispositionMapper proctoringDispositionMapper;
+
     private ExamProctoringService examProctoringService;
 
     @BeforeEach
@@ -80,6 +93,7 @@ class ExamProctoringServiceTest {
             examSessionMapper,
             submissionMapper,
             antiCheatEventMapper,
+            proctoringDispositionMapper,
             new ExamPermissionService(userMapper, examTargetClassMapper, teachingClassMapper)
         );
     }
@@ -125,6 +139,10 @@ class ExamProctoringServiceTest {
             assertEquals(1, overview.getLowRiskCount());
             assertEquals(0, overview.getMediumRiskCount());
             assertEquals(1, overview.getSnapshotAlertCount());
+            assertEquals(2, overview.getPendingReviewDispositionCount());
+            assertEquals(0, overview.getConfirmedDispositionCount());
+            assertEquals(0, overview.getFalsePositiveDispositionCount());
+            assertEquals(0, overview.getClosedDispositionCount());
             assertFalse(overview.getRecentEvents().isEmpty());
             assertEquals("FULLSCREEN_EXIT", overview.getRecentEvents().get(0).getEventType());
         }
@@ -163,6 +181,74 @@ class ExamProctoringServiceTest {
             assertEquals(4, timeline.getEventCount());
             assertEquals(2, timeline.getEventTypeStats().size());
             assertEquals("PASTE_ATTEMPT", timeline.getEvents().get(0).getEventType());
+            assertEquals("PENDING_REVIEW", timeline.getDisposition().getStatus());
+        }
+    }
+
+    @Test
+    void listStudentsShouldReturnDispositionInfo() {
+        Exam exam = buildExam();
+        when(examMapper.selectById(1L)).thenReturn(exam);
+        when(userMapper.selectRoleCodes(200L)).thenReturn(List.of("TEACHER"));
+        when(examTargetClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(buildTargetClass(1L, 11L)));
+        when(teachingClassMapper.selectBatchIds(any())).thenReturn(List.of(buildTeachingClass(11L, "一班")));
+        when(studentTeachingClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(buildEnrollment(1001L, 11L)));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(buildUser(1001L, "alice", "Alice")));
+        when(examSessionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(submissionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(antiCheatEventMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(proctoringDispositionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
+            disposition(1L, 1001L, "CONFIRMED", "已人工确认")
+        ));
+
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+
+            List<ProctoringStudentView> result = examProctoringService.listStudents(1L);
+
+            assertEquals(1, result.size());
+            assertEquals("CONFIRMED", result.get(0).getDisposition().getStatus());
+            assertEquals("已人工确认", result.get(0).getDisposition().getRemark());
+        }
+    }
+
+    @Test
+    void overviewShouldCountDispositionStatuses() {
+        Exam exam = buildExam();
+        when(examMapper.selectById(1L)).thenReturn(exam);
+        when(userMapper.selectRoleCodes(200L)).thenReturn(List.of("TEACHER"));
+        when(examTargetClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(buildTargetClass(1L, 11L)));
+        when(teachingClassMapper.selectBatchIds(any())).thenReturn(List.of(buildTeachingClass(11L, "一班")));
+        when(studentTeachingClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
+            buildEnrollment(1001L, 11L),
+            buildEnrollment(1002L, 11L),
+            buildEnrollment(1003L, 11L),
+            buildEnrollment(1004L, 11L)
+        ));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(
+            buildUser(1001L, "alice", "Alice"),
+            buildUser(1002L, "bob", "Bob"),
+            buildUser(1003L, "carl", "Carl"),
+            buildUser(1004L, "dina", "Dina")
+        ));
+        when(examSessionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(submissionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(antiCheatEventMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(proctoringDispositionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
+            disposition(1L, 1001L, "CONFIRMED", null),
+            disposition(1L, 1002L, "FALSE_POSITIVE", null),
+            disposition(1L, 1003L, "CLOSED", null)
+        ));
+
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+
+            ProctoringOverviewView overview = examProctoringService.getOverview(1L);
+
+            assertEquals(1, overview.getPendingReviewDispositionCount());
+            assertEquals(1, overview.getConfirmedDispositionCount());
+            assertEquals(1, overview.getFalsePositiveDispositionCount());
+            assertEquals(1, overview.getClosedDispositionCount());
         }
     }
 
@@ -190,6 +276,118 @@ class ExamProctoringServiceTest {
         }
     }
 
+    @Test
+    void updateStudentDispositionShouldInsertNewRecord() {
+        stubOneStudentProctoringContext();
+        when(proctoringDispositionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+
+        ProctoringDispositionRequest request = dispositionRequest("CONFIRMED", "  已电话核查  ");
+
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+            mocked.when(SecurityUtils::getCurrentUsername).thenReturn("teacher1");
+
+            ProctoringDispositionView result = examProctoringService.updateStudentDisposition(1L, 1001L, request);
+
+            ArgumentCaptor<ProctoringDisposition> captor = ArgumentCaptor.forClass(ProctoringDisposition.class);
+            verify(proctoringDispositionMapper).insert(captor.capture());
+            assertEquals(1L, captor.getValue().getExamId());
+            assertEquals(1001L, captor.getValue().getStudentId());
+            assertEquals("CONFIRMED", captor.getValue().getStatus());
+            assertEquals("已电话核查", captor.getValue().getRemark());
+            assertEquals(200L, captor.getValue().getHandledBy());
+            assertNotNull(captor.getValue().getHandledAt());
+            assertEquals("CONFIRMED", result.getStatus());
+            assertEquals("teacher1", result.getHandledByName());
+        }
+    }
+
+    @Test
+    void updateStudentDispositionShouldOverwriteExistingRecord() {
+        stubOneStudentProctoringContext();
+        ProctoringDisposition existing = disposition(1L, 1001L, "PENDING_REVIEW", null);
+        existing.setId(88L);
+        when(proctoringDispositionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(existing);
+
+        ProctoringDispositionRequest request = dispositionRequest("FALSE_POSITIVE", "网络波动误报");
+
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+            mocked.when(SecurityUtils::getCurrentUsername).thenReturn("teacher1");
+
+            examProctoringService.updateStudentDisposition(1L, 1001L, request);
+
+            ArgumentCaptor<ProctoringDisposition> captor = ArgumentCaptor.forClass(ProctoringDisposition.class);
+            verify(proctoringDispositionMapper).updateById(captor.capture());
+            assertEquals(88L, captor.getValue().getId());
+            assertEquals("FALSE_POSITIVE", captor.getValue().getStatus());
+            assertEquals("网络波动误报", captor.getValue().getRemark());
+        }
+    }
+
+    @Test
+    void updateStudentDispositionShouldRetryAsUpdateWhenConcurrentInsertWins() {
+        stubOneStudentProctoringContext();
+        when(proctoringDispositionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(proctoringDispositionMapper.insert(any(ProctoringDisposition.class))).thenThrow(new DuplicateKeyException("duplicate"));
+
+        ProctoringDispositionRequest request = dispositionRequest("CLOSED", "并发保存兜底");
+
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+            mocked.when(SecurityUtils::getCurrentUsername).thenReturn("teacher1");
+
+            ProctoringDispositionView result = examProctoringService.updateStudentDisposition(1L, 1001L, request);
+
+            ArgumentCaptor<ProctoringDisposition> captor = ArgumentCaptor.forClass(ProctoringDisposition.class);
+            verify(proctoringDispositionMapper).update(captor.capture(), any());
+            assertEquals("CLOSED", captor.getValue().getStatus());
+            assertEquals("并发保存兜底", captor.getValue().getRemark());
+            assertEquals(200L, captor.getValue().getHandledBy());
+            assertEquals("CLOSED", result.getStatus());
+        }
+    }
+
+    @Test
+    void updateStudentDispositionShouldRejectInvalidStatus() {
+        stubOneStudentProctoringContext();
+
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+
+            assertThrows(BusinessException.class,
+                () -> examProctoringService.updateStudentDisposition(1L, 1001L, dispositionRequest("INVALID", null)));
+        }
+    }
+
+    @Test
+    void updateStudentDispositionShouldRejectNonTargetStudent() {
+        Exam exam = buildExam();
+        when(examMapper.selectById(1L)).thenReturn(exam);
+        when(userMapper.selectRoleCodes(200L)).thenReturn(List.of("TEACHER"));
+        when(examTargetClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(buildTargetClass(1L, 11L)));
+        when(studentTeachingClassMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(0L);
+
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+
+            assertThrows(BusinessException.class,
+                () -> examProctoringService.updateStudentDisposition(1L, 1001L, dispositionRequest("CLOSED", null)));
+        }
+    }
+
+    @Test
+    void updateStudentDispositionShouldRejectTooLongRemark() {
+        stubOneStudentProctoringContext();
+
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+
+            assertThrows(BusinessException.class,
+                () -> examProctoringService.updateStudentDisposition(1L, 1001L, dispositionRequest("CLOSED", "x".repeat(501))));
+        }
+    }
+
     private Exam buildExam() {
         Exam exam = new Exam();
         exam.setId(1L);
@@ -199,6 +397,14 @@ class ExamProctoringServiceTest {
         exam.setStartTime(LocalDateTime.now().minusMinutes(10));
         exam.setEndTime(LocalDateTime.now().plusMinutes(50));
         return exam;
+    }
+
+    private void stubOneStudentProctoringContext() {
+        Exam exam = buildExam();
+        when(examMapper.selectById(1L)).thenReturn(exam);
+        when(userMapper.selectRoleCodes(200L)).thenReturn(List.of("TEACHER"));
+        when(examTargetClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(buildTargetClass(1L, 11L)));
+        when(studentTeachingClassMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(1L);
     }
 
     private ExamTargetClass buildTargetClass(Long examId, Long classId) {
@@ -277,5 +483,22 @@ class ExamProctoringServiceTest {
         event.setEventTime(eventTime);
         event.setDurationMs(durationMs);
         return event;
+    }
+
+    private ProctoringDisposition disposition(Long examId, Long studentId, String status, String remark) {
+        ProctoringDisposition disposition = new ProctoringDisposition();
+        disposition.setExamId(examId);
+        disposition.setStudentId(studentId);
+        disposition.setStatus(status);
+        disposition.setRemark(remark);
+        disposition.setHandledAt(LocalDateTime.now());
+        return disposition;
+    }
+
+    private ProctoringDispositionRequest dispositionRequest(String status, String remark) {
+        ProctoringDispositionRequest request = new ProctoringDispositionRequest();
+        request.setStatus(status);
+        request.setRemark(remark);
+        return request;
     }
 }

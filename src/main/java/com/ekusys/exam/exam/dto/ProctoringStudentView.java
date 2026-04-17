@@ -23,4 +23,5 @@ public class ProctoringStudentView {
     private Boolean snapshotAlert;
     private Long totalOffscreenDurationMs;
     private Boolean longOffscreen;
+    private ProctoringDispositionView disposition;
 }
