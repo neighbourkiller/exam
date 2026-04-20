@@ -205,6 +205,7 @@ const examEndAt = ref(null)
 const blurStartedAt = ref(null)
 const hiddenStartedAt = ref(null)
 const offlineStartedAt = ref(null)
+const endingExam = ref(false)
 const bannerState = reactive({
   type: 'warning',
   title: '考试页面处于监考模式',
@@ -222,6 +223,7 @@ let snapshotTimer = null
 let bannerResetTimer = null
 let draftSaveTimer = null
 let pendingDraftDirty = false
+let pendingDraftAnswerTimestampUpdate = false
 const recentEventTimes = new Map()
 const syncState = reactive({
   userId: null,
@@ -398,7 +400,7 @@ const toggleQuestionMark = (question) => {
   if (showMarkedOnly.value && !markedQuestionIds.value.length) {
     showMarkedOnly.value = false
   }
-  scheduleDraftSave({ dirty: false })
+  scheduleDraftSave({ dirty: false, updateAnswerTimestamp: false })
 }
 
 const goToQuestion = (questionId) => {
@@ -651,22 +653,27 @@ const persistDraftState = async ({
   })
 }
 
-const scheduleDraftSave = ({ dirty = true } = {}) => {
+const resolveDraftUpdatedAt = (updateAnswerTimestamp) =>
+  updateAnswerTimestamp ? Date.now() : (syncState.updatedAt || Date.now())
+
+const scheduleDraftSave = ({ dirty = true, updateAnswerTimestamp = true } = {}) => {
   if (!syncState.userId) {
     return
   }
   pendingDraftDirty = pendingDraftDirty || dirty
+  pendingDraftAnswerTimestampUpdate = pendingDraftAnswerTimestampUpdate || updateAnswerTimestamp
   if (draftSaveTimer) {
     clearTimeout(draftSaveTimer)
   }
   draftSaveTimer = setTimeout(() => {
     draftSaveTimer = null
     void persistDraftState({
-      updatedAt: Date.now(),
+      updatedAt: resolveDraftUpdatedAt(pendingDraftAnswerTimestampUpdate),
       lastSyncedAt: syncState.lastSyncedAt,
       dirty: pendingDraftDirty ? true : syncState.dirty
     })
     pendingDraftDirty = false
+    pendingDraftAnswerTimestampUpdate = false
   }, 400)
 }
 
@@ -677,11 +684,12 @@ const flushDraftSave = () => {
   clearTimeout(draftSaveTimer)
   draftSaveTimer = null
   void persistDraftState({
-    updatedAt: Date.now(),
+    updatedAt: resolveDraftUpdatedAt(pendingDraftAnswerTimestampUpdate),
     lastSyncedAt: syncState.lastSyncedAt,
     dirty: pendingDraftDirty ? true : syncState.dirty
   })
   pendingDraftDirty = false
+  pendingDraftAnswerTimestampUpdate = false
 }
 
 const syncDirtyDraft = async ({ force = false, notify = false } = {}) => {
@@ -743,6 +751,7 @@ const submit = async (needConfirm = true) => {
     await clearDraft(syncState.userId, examId)
   }
   syncState.dirty = false
+  await exitFullscreenForExamEnd()
   try {
     await ElMessageBox.confirm('试卷已提交，系统正在处理成绩。是否前往考试结果中心查看成绩状态？', '提交成功', {
       confirmButtonText: '查看考试结果',
@@ -758,6 +767,18 @@ const submit = async (needConfirm = true) => {
     if (action === 'cancel') {
       router.push('/student/exams')
     }
+  }
+}
+
+const exitFullscreenForExamEnd = async () => {
+  if (!document.fullscreenElement || typeof document.exitFullscreen !== 'function') {
+    return
+  }
+  endingExam.value = true
+  try {
+    await document.exitFullscreen()
+  } catch {
+    // Browser may reject exitFullscreen when the document is no longer active.
   }
 }
 
@@ -804,6 +825,9 @@ const onVisibility = () => {
 }
 
 const onFullscreenChange = () => {
+  if (endingExam.value) {
+    return
+  }
   if (!document.fullscreenElement) {
     reportAntiCheatEvent('FULLSCREEN_EXIT', 0, { mode: 'browser-fullscreen' })
   }
@@ -931,7 +955,7 @@ watch(answers, () => {
   if (!syncState.initialized || !state.questions.length) {
     return
   }
-  scheduleDraftSave({ dirty: true })
+  scheduleDraftSave({ dirty: true, updateAnswerTimestamp: true })
 }, { deep: true })
 
 watch(visibleQuestions, (questions) => {
@@ -952,6 +976,8 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  endingExam.value = true
+  void exitFullscreenForExamEnd()
   if (timer) clearInterval(timer)
   if (snapshotTimer) clearInterval(snapshotTimer)
   if (bannerResetTimer) clearTimeout(bannerResetTimer)

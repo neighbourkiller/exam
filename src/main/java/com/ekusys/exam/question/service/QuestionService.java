@@ -37,15 +37,18 @@ public class QuestionService {
     private final SubjectMapper subjectMapper;
     private final QuestionAssetMapper questionAssetMapper;
     private final PaperQuestionMapper paperQuestionMapper;
+    private final QuestionAssetUrlResolver assetUrlResolver;
 
     public QuestionService(QuestionMapper questionMapper,
                            SubjectMapper subjectMapper,
                            QuestionAssetMapper questionAssetMapper,
-                           PaperQuestionMapper paperQuestionMapper) {
+                           PaperQuestionMapper paperQuestionMapper,
+                           QuestionAssetUrlResolver assetUrlResolver) {
         this.questionMapper = questionMapper;
         this.subjectMapper = subjectMapper;
         this.questionAssetMapper = questionAssetMapper;
         this.paperQuestionMapper = paperQuestionMapper;
+        this.assetUrlResolver = assetUrlResolver;
     }
 
     public PageResponse<QuestionView> query(QuestionQueryRequest request) {
@@ -207,7 +210,7 @@ public class QuestionService {
                 .orderByAsc(QuestionAsset::getId)
         ).stream().map(asset -> QuestionImageUploadView.builder()
             .assetId(toIdString(asset.getId()))
-            .url(asset.getUrl())
+            .url(assetUrlResolver.resolve(asset))
             .objectKey(asset.getObjectKey())
             .originalName(asset.getOriginalName())
             .size(asset.getSize())

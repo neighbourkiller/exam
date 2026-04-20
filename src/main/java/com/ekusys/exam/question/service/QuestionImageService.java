@@ -22,14 +22,17 @@ public class QuestionImageService {
 
     private final MinioClient minioClient;
     private final MinioProperties minioProperties;
+    private final QuestionAssetUrlResolver assetUrlResolver;
     private final QuestionAssetMapper questionAssetMapper;
     private volatile boolean bucketInitialized = false;
 
     public QuestionImageService(MinioClient minioClient,
                                 MinioProperties minioProperties,
+                                QuestionAssetUrlResolver assetUrlResolver,
                                 QuestionAssetMapper questionAssetMapper) {
         this.minioClient = minioClient;
         this.minioProperties = minioProperties;
+        this.assetUrlResolver = assetUrlResolver;
         this.questionAssetMapper = questionAssetMapper;
     }
 
@@ -54,7 +57,7 @@ public class QuestionImageService {
             throw new BusinessException("图片上传失败: " + e.getMessage());
         }
 
-        String url = buildPublicUrl(objectKey);
+        String url = assetUrlResolver.buildPublicUrl(objectKey);
         QuestionAsset asset = new QuestionAsset();
         asset.setQuestionId(questionId);
         asset.setUploaderId(SecurityUtils.getCurrentUserId() == null ? 0L : SecurityUtils.getCurrentUserId());
@@ -126,18 +129,6 @@ public class QuestionImageService {
             return "VIDEO";
         }
         return "ATTACHMENT";
-    }
-
-    private String buildPublicUrl(String objectKey) {
-        String endpoint = minioProperties.getPublicEndpoint();
-        if (endpoint == null || endpoint.isBlank()) {
-            endpoint = minioProperties.getEndpoint();
-        }
-        if (endpoint == null || endpoint.isBlank()) {
-            throw new BusinessException("MinIO endpoint 未配置");
-        }
-        String normalized = endpoint.endsWith("/") ? endpoint.substring(0, endpoint.length() - 1) : endpoint;
-        return normalized + "/" + minioProperties.getBucket() + "/" + objectKey;
     }
 
     private String buildPublicReadPolicy(String bucket) {

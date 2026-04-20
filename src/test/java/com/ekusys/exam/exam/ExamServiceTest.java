@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ekusys.exam.common.config.AppSnapshotProperties;
+import com.ekusys.exam.common.config.MinioProperties;
 import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.exam.dto.StartExamResponse;
 import com.ekusys.exam.exam.service.ExamAccessService;
@@ -22,6 +23,7 @@ import com.ekusys.exam.exam.service.ExamStartService;
 import com.ekusys.exam.exam.service.ExamStatusService;
 import com.ekusys.exam.exam.service.ExamStudentQueryService;
 import com.ekusys.exam.exam.service.ExamSubmissionService;
+import com.ekusys.exam.question.service.QuestionAssetUrlResolver;
 import com.ekusys.exam.exam.service.ExamTeacherQueryService;
 import com.ekusys.exam.repository.entity.Exam;
 import com.ekusys.exam.repository.entity.ExamSession;
@@ -133,7 +135,8 @@ class ExamServiceTest {
             paperQuestionMapper,
             questionMapper,
             questionAssetMapper,
-            snapshotService
+            snapshotService,
+            new QuestionAssetUrlResolver(new MinioProperties())
         );
         examService = new ExamService(
             new com.ekusys.exam.exam.service.ExamLifecycleService(

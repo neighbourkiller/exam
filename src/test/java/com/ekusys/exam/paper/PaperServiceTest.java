@@ -16,6 +16,7 @@ import com.ekusys.exam.common.enums.Difficulty;
 import com.ekusys.exam.common.enums.QuestionType;
 import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.common.security.LoginUser;
+import com.ekusys.exam.question.service.QuestionAssetUrlResolver;
 import com.ekusys.exam.paper.dto.AutoGeneratePaperRequest;
 import com.ekusys.exam.paper.dto.AutoGenerateRule;
 import com.ekusys.exam.paper.dto.ManualCreatePaperRequest;
@@ -78,7 +79,8 @@ class PaperServiceTest {
             questionMapper,
             questionAssetMapper,
             subjectMapper,
-            examMapper
+            examMapper,
+            new QuestionAssetUrlResolver(new com.ekusys.exam.common.config.MinioProperties())
         );
 
         LoginUser admin = LoginUser.builder()
