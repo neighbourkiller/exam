@@ -20,6 +20,13 @@ const cloneAnswers = (answers = {}) => {
   return result
 }
 
+const cloneMarkedQuestionIds = (markedQuestionIds = []) => {
+  if (!Array.isArray(markedQuestionIds)) {
+    return []
+  }
+  return [...new Set(markedQuestionIds.map((item) => String(item)).filter((item) => item))]
+}
+
 const buildStorageKey = (userId, examId) => `${String(userId)}:${String(examId)}`
 
 const openDatabase = () => {
@@ -86,11 +93,12 @@ export const loadDraft = async (userId, examId) => {
   }
   return {
     ...result,
-    answers: cloneAnswers(result.answers || {})
+    answers: cloneAnswers(result.answers || {}),
+    markedQuestionIds: cloneMarkedQuestionIds(result.markedQuestionIds || [])
   }
 }
 
-export const saveDraft = async ({ userId, examId, answers, updatedAt, lastSyncedAt, dirty }) => {
+export const saveDraft = async ({ userId, examId, answers, markedQuestionIds, updatedAt, lastSyncedAt, dirty }) => {
   if (!userId || !examId) {
     return null
   }
@@ -99,6 +107,7 @@ export const saveDraft = async ({ userId, examId, answers, updatedAt, lastSynced
     userId: String(userId),
     examId: String(examId),
     answers: cloneAnswers(answers),
+    markedQuestionIds: cloneMarkedQuestionIds(markedQuestionIds),
     updatedAt: Number.isFinite(Number(updatedAt)) ? Number(updatedAt) : Date.now(),
     lastSyncedAt: Number.isFinite(Number(lastSyncedAt)) ? Number(lastSyncedAt) : null,
     dirty: Boolean(dirty)

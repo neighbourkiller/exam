@@ -17,6 +17,7 @@ import com.ekusys.exam.common.enums.QuestionType;
 import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.question.dto.QuestionUpdateRequest;
+import com.ekusys.exam.question.service.QuestionAssetUrlResolver;
 import com.ekusys.exam.question.service.QuestionService;
 import com.ekusys.exam.repository.entity.Question;
 import com.ekusys.exam.repository.mapper.PaperQuestionMapper;
@@ -50,7 +51,13 @@ class QuestionServiceTest {
 
     @BeforeEach
     void setUp() {
-        questionService = new QuestionService(questionMapper, subjectMapper, questionAssetMapper, paperQuestionMapper);
+        questionService = new QuestionService(
+            questionMapper,
+            subjectMapper,
+            questionAssetMapper,
+            paperQuestionMapper,
+            new QuestionAssetUrlResolver(new com.ekusys.exam.common.config.MinioProperties())
+        );
     }
 
     @Test

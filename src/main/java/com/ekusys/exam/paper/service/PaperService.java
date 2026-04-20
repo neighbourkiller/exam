@@ -15,6 +15,7 @@ import com.ekusys.exam.paper.dto.PaperQuestionAssetView;
 import com.ekusys.exam.paper.dto.PaperQueryRequest;
 import com.ekusys.exam.paper.dto.PaperQuestionView;
 import com.ekusys.exam.paper.dto.PaperUpdateRequest;
+import com.ekusys.exam.question.service.QuestionAssetUrlResolver;
 import com.ekusys.exam.repository.entity.Exam;
 import com.ekusys.exam.repository.entity.Paper;
 import com.ekusys.exam.repository.entity.PaperQuestion;
@@ -51,19 +52,22 @@ public class PaperService {
     private final QuestionAssetMapper questionAssetMapper;
     private final SubjectMapper subjectMapper;
     private final ExamMapper examMapper;
+    private final QuestionAssetUrlResolver assetUrlResolver;
 
     public PaperService(PaperMapper paperMapper,
                         PaperQuestionMapper paperQuestionMapper,
                         QuestionMapper questionMapper,
                         QuestionAssetMapper questionAssetMapper,
                         SubjectMapper subjectMapper,
-                        ExamMapper examMapper) {
+                        ExamMapper examMapper,
+                        QuestionAssetUrlResolver assetUrlResolver) {
         this.paperMapper = paperMapper;
         this.paperQuestionMapper = paperQuestionMapper;
         this.questionMapper = questionMapper;
         this.questionAssetMapper = questionAssetMapper;
         this.subjectMapper = subjectMapper;
         this.examMapper = examMapper;
+        this.assetUrlResolver = assetUrlResolver;
     }
 
     @Transactional
@@ -363,7 +367,7 @@ public class PaperService {
             result.computeIfAbsent(asset.getQuestionId(), k -> new ArrayList<>())
                 .add(PaperQuestionAssetView.builder()
                     .assetId(toIdString(asset.getId()))
-                    .url(asset.getUrl())
+                    .url(assetUrlResolver.resolve(asset))
                     .fileType(asset.getFileType())
                     .originalName(asset.getOriginalName())
                     .size(asset.getSize())

@@ -3,6 +3,7 @@ package com.ekusys.exam.exam.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ekusys.exam.exam.dto.StudentExamQuestionView;
 import com.ekusys.exam.question.dto.QuestionImageUploadView;
+import com.ekusys.exam.question.service.QuestionAssetUrlResolver;
 import com.ekusys.exam.repository.entity.PaperQuestion;
 import com.ekusys.exam.repository.entity.Question;
 import com.ekusys.exam.repository.entity.QuestionAsset;
@@ -22,15 +23,18 @@ public class ExamQuestionAssembler {
     private final QuestionMapper questionMapper;
     private final QuestionAssetMapper questionAssetMapper;
     private final ExamSnapshotService examSnapshotService;
+    private final QuestionAssetUrlResolver assetUrlResolver;
 
     public ExamQuestionAssembler(PaperQuestionMapper paperQuestionMapper,
                                  QuestionMapper questionMapper,
                                  QuestionAssetMapper questionAssetMapper,
-                                 ExamSnapshotService examSnapshotService) {
+                                 ExamSnapshotService examSnapshotService,
+                                 QuestionAssetUrlResolver assetUrlResolver) {
         this.paperQuestionMapper = paperQuestionMapper;
         this.questionMapper = questionMapper;
         this.questionAssetMapper = questionAssetMapper;
         this.examSnapshotService = examSnapshotService;
+        this.assetUrlResolver = assetUrlResolver;
     }
 
     public List<StudentExamQuestionView> assembleQuestions(Long paperId, Long examId, Long studentId) {
@@ -78,7 +82,7 @@ public class ExamQuestionAssembler {
             QuestionAsset::getQuestionId,
             Collectors.mapping(asset -> QuestionImageUploadView.builder()
                 .assetId(String.valueOf(asset.getId()))
-                .url(asset.getUrl())
+                .url(assetUrlResolver.resolve(asset))
                 .objectKey(asset.getObjectKey())
                 .originalName(asset.getOriginalName())
                 .size(asset.getSize())

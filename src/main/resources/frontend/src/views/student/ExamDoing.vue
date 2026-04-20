@@ -31,50 +31,78 @@
     <div class="exam-body">
       <aside class="exam-outline">
         <div class="outline-card">
-          <div class="outline-card__title">答题进度</div>
+          <div class="outline-toolbar">
+            <el-switch
+              v-model="showMarkedOnly"
+              size="small"
+              active-text="只看标记"
+            />
+          </div>
           <div class="outline-grid">
             <button
-              v-for="q in state.questions"
+              v-for="q in outlineQuestions"
               :key="q.questionId"
-              :class="['outline-item', { 'outline-item--done': isQuestionAnswered(q) }]"
+              :class="[
+                  'outline-item',
+                {
+                  'outline-item--done': isQuestionAnswered(q),
+                  'outline-item--marked': isQuestionMarked(q),
+                  'outline-item--active': isCurrentQuestion(q)
+                }
+              ]"
               type="button"
-              @click="scrollToQuestion(q.questionId)"
+              @click="goToQuestion(q.questionId)"
             >
-              {{ q.sortOrder }}
+              <span class="outline-item__marker" aria-hidden="true"></span>
+              <span class="outline-item__number">{{ q.sortOrder }}</span>
             </button>
           </div>
-          <p class="outline-tip">绿色表示已作答，可点击题号快速定位。</p>
+          <el-empty
+            v-if="showMarkedOnly && !outlineQuestions.length"
+            description="暂无标记题"
+            :image-size="72"
+          />
         </div>
       </aside>
 
       <section class="question-list">
         <article
-          v-for="q in state.questions"
-          :id="questionAnchorId(q.questionId)"
-          :key="q.questionId"
+          v-if="currentQuestion"
+          :id="questionAnchorId(currentQuestion.questionId)"
+          :key="currentQuestion.questionId"
           class="q-item"
         >
           <div class="q-item__head">
             <div>
-              <div class="q-item__index">第 {{ q.sortOrder }} 题</div>
-              <div class="q-item__meta">{{ typeLabelMap[q.type] || q.type || '题目' }} · {{ q.score }} 分</div>
+              <div class="q-item__index">第 {{ currentQuestion.sortOrder }} 题</div>
+              <div class="q-item__meta">{{ typeLabelMap[currentQuestion.type] || currentQuestion.type || '题目' }} · {{ currentQuestion.score }} 分</div>
             </div>
-            <div :class="['q-item__status', { 'q-item__status--done': isQuestionAnswered(q) }]">
-              {{ isQuestionAnswered(q) ? '已作答' : '待作答' }}
+            <div class="q-item__actions">
+              <el-button
+                :type="isQuestionMarked(currentQuestion) ? 'warning' : 'info'"
+                :plain="!isQuestionMarked(currentQuestion)"
+                size="small"
+                @click="toggleQuestionMark(currentQuestion)"
+              >
+                {{ isQuestionMarked(currentQuestion) ? '取消标记' : '标记' }}
+              </el-button>
+              <div :class="['q-item__status', { 'q-item__status--done': isQuestionAnswered(currentQuestion) }]">
+                {{ isQuestionAnswered(currentQuestion) ? '已作答' : '待作答' }}
+              </div>
             </div>
           </div>
 
-          <div class="q-content">{{ q.content }}</div>
+          <div class="q-content">{{ currentQuestion.content }}</div>
 
-          <div v-if="questionImages(q).length" class="q-image-list">
+          <div v-if="questionImages(currentQuestion).length" class="q-image-list">
             <figure
-              v-for="asset in questionImages(q)"
+              v-for="asset in questionImages(currentQuestion)"
               :key="asset.assetId || asset.url"
               class="q-image-frame"
             >
               <el-image
                 :src="asset.url"
-                :preview-src-list="questionImages(q).map(item => item.url)"
+                :preview-src-list="questionImages(currentQuestion).map(item => item.url)"
                 fit="contain"
                 class="q-image"
               />
@@ -82,37 +110,37 @@
           </div>
 
           <div class="q-answer">
-            <template v-if="q.type === 'MULTI'">
-              <el-checkbox-group v-model="answers[q.questionId]" class="option-list">
+            <template v-if="currentQuestion.type === 'MULTI'">
+              <el-checkbox-group v-model="answers[currentQuestion.questionId]" class="option-list">
                 <el-checkbox
-                  v-for="opt in parseOptions(q)"
-                  :key="`${q.questionId}-${opt.label}`"
+                  v-for="opt in parseOptions(currentQuestion)"
+                  :key="`${currentQuestion.questionId}-${opt.label}`"
                   :label="opt.label"
                   class="option-item"
                 >
                   <span class="option-marker">{{ opt.label }}</span>
-                  <span>{{ displayOptionText(q, opt) }}</span>
+                  <span>{{ displayOptionText(currentQuestion, opt) }}</span>
                 </el-checkbox>
               </el-checkbox-group>
             </template>
 
-            <template v-else-if="q.type === 'SINGLE' || q.type === 'JUDGE'">
-              <el-radio-group v-model="answers[q.questionId]" class="option-list">
+            <template v-else-if="currentQuestion.type === 'SINGLE' || currentQuestion.type === 'JUDGE'">
+              <el-radio-group v-model="answers[currentQuestion.questionId]" class="option-list">
                 <el-radio
-                  v-for="opt in parseOptions(q)"
-                  :key="`${q.questionId}-${opt.label}`"
+                  v-for="opt in parseOptions(currentQuestion)"
+                  :key="`${currentQuestion.questionId}-${opt.label}`"
                   :label="opt.label"
                   class="option-item"
                 >
                   <span class="option-marker">{{ opt.label }}</span>
-                  <span>{{ displayOptionText(q, opt) }}</span>
+                  <span>{{ displayOptionText(currentQuestion, opt) }}</span>
                 </el-radio>
               </el-radio-group>
             </template>
 
             <template v-else>
               <el-input
-                v-model="answers[q.questionId]"
+                v-model="answers[currentQuestion.questionId]"
                 type="textarea"
                 :rows="3"
                 resize="none"
@@ -120,7 +148,21 @@
               />
             </template>
           </div>
+
+          <div class="q-navigation">
+            <el-button size="large" :disabled="isFirstVisibleQuestion" @click="goToPreviousQuestion">
+              上一题
+            </el-button>
+            <span class="q-navigation__progress">{{ currentQuestionPosition }}/{{ visibleQuestions.length }}</span>
+            <el-button size="large" type="primary" :disabled="isLastVisibleQuestion" @click="goToNextQuestion">
+              下一题
+            </el-button>
+          </div>
         </article>
+        <el-empty
+          v-else-if="showMarkedOnly && !visibleQuestions.length"
+          description="暂无标记题"
+        />
       </section>
     </div>
 
@@ -128,6 +170,7 @@
       <div class="exam-footer__summary">
         <span>共 {{ state.questions.length }} 题</span>
         <span>已完成 {{ answeredCount }} 题</span>
+        <span>已标记 {{ markedCount }} 题</span>
       </div>
       <el-button type="primary" size="large" @click="submit">交卷</el-button>
     </footer>
@@ -154,11 +197,15 @@ const state = reactive({
   questions: []
 })
 const answers = reactive({})
+const markedQuestionIds = ref([])
+const showMarkedOnly = ref(false)
+const currentQuestionId = ref('')
 const secondsLeft = ref(null)
 const examEndAt = ref(null)
 const blurStartedAt = ref(null)
 const hiddenStartedAt = ref(null)
 const offlineStartedAt = ref(null)
+const endingExam = ref(false)
 const bannerState = reactive({
   type: 'warning',
   title: '考试页面处于监考模式',
@@ -175,6 +222,8 @@ let timer = null
 let snapshotTimer = null
 let bannerResetTimer = null
 let draftSaveTimer = null
+let pendingDraftDirty = false
+let pendingDraftAnswerTimestampUpdate = false
 const recentEventTimes = new Map()
 const syncState = reactive({
   userId: null,
@@ -187,6 +236,37 @@ const syncState = reactive({
 
 const answeredCount = computed(() =>
   state.questions.filter((q) => isQuestionAnswered(q)).length
+)
+
+const markedQuestionIdSet = computed(() => new Set(markedQuestionIds.value))
+const markedCount = computed(() => markedQuestionIds.value.length)
+const visibleQuestions = computed(() =>
+  showMarkedOnly.value
+    ? state.questions.filter((q) => isQuestionMarked(q))
+    : state.questions
+)
+const outlineQuestions = computed(() => visibleQuestions.value)
+const currentQuestionIndex = computed(() =>
+  visibleQuestions.value.findIndex((question) => toStoredQuestionId(question.questionId) === currentQuestionId.value)
+)
+const normalizedCurrentQuestionIndex = computed(() => {
+  if (!visibleQuestions.value.length) {
+    return -1
+  }
+  return currentQuestionIndex.value >= 0 ? currentQuestionIndex.value : 0
+})
+const currentQuestion = computed(() =>
+  normalizedCurrentQuestionIndex.value < 0
+    ? null
+    : visibleQuestions.value[normalizedCurrentQuestionIndex.value]
+)
+const currentQuestionPosition = computed(() =>
+  normalizedCurrentQuestionIndex.value < 0 ? 0 : normalizedCurrentQuestionIndex.value + 1
+)
+const isFirstVisibleQuestion = computed(() => normalizedCurrentQuestionIndex.value <= 0)
+const isLastVisibleQuestion = computed(() =>
+  normalizedCurrentQuestionIndex.value < 0
+    || normalizedCurrentQuestionIndex.value >= visibleQuestions.value.length - 1
 )
 
 const formattedTimeLeft = computed(() => {
@@ -257,6 +337,17 @@ const questionImages = (question) =>
 
 const toStoredQuestionId = (questionId) => String(questionId)
 
+const buildValidQuestionIdSet = () =>
+  new Set(state.questions.map((question) => toStoredQuestionId(question.questionId)))
+
+const normalizeMarkedQuestionIds = (ids = []) => {
+  const validQuestionIds = buildValidQuestionIdSet()
+  if (!Array.isArray(ids) || !validQuestionIds.size) {
+    return []
+  }
+  return [...new Set(ids.map((item) => String(item)).filter((item) => validQuestionIds.has(item)))]
+}
+
 const normalizeAnswerInputValue = (question, value) => {
   if (question?.type === 'MULTI') {
     if (Array.isArray(value)) {
@@ -281,10 +372,62 @@ const isQuestionAnswered = (question) => {
   return String(value || '').trim().length > 0
 }
 
-const scrollToQuestion = (questionId) => {
-  const target = document.getElementById(questionAnchorId(questionId))
-  if (target) {
-    target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+const isQuestionMarked = (question) =>
+  markedQuestionIdSet.value.has(toStoredQuestionId(question?.questionId))
+
+const isCurrentQuestion = (question) =>
+  toStoredQuestionId(question?.questionId) === toStoredQuestionId(currentQuestion.value?.questionId)
+
+const applyMarkedQuestionIds = (ids = []) => {
+  markedQuestionIds.value = normalizeMarkedQuestionIds(ids)
+  if (showMarkedOnly.value && !markedQuestionIds.value.length) {
+    showMarkedOnly.value = false
+  }
+}
+
+const buildMarkedQuestionIdsFromState = () => normalizeMarkedQuestionIds(markedQuestionIds.value)
+
+const toggleQuestionMark = (question) => {
+  const questionId = toStoredQuestionId(question?.questionId)
+  if (!questionId) {
+    return
+  }
+  if (markedQuestionIdSet.value.has(questionId)) {
+    markedQuestionIds.value = markedQuestionIds.value.filter((item) => item !== questionId)
+  } else {
+    markedQuestionIds.value = [...markedQuestionIds.value, questionId]
+  }
+  if (showMarkedOnly.value && !markedQuestionIds.value.length) {
+    showMarkedOnly.value = false
+  }
+  scheduleDraftSave({ dirty: false, updateAnswerTimestamp: false })
+}
+
+const goToQuestion = (questionId) => {
+  const normalizedQuestionId = toStoredQuestionId(questionId)
+  if (!visibleQuestions.value.some((question) => toStoredQuestionId(question.questionId) === normalizedQuestionId)) {
+    return
+  }
+  currentQuestionId.value = normalizedQuestionId
+}
+
+const goToPreviousQuestion = () => {
+  if (isFirstVisibleQuestion.value) {
+    return
+  }
+  const previousQuestion = visibleQuestions.value[normalizedCurrentQuestionIndex.value - 1]
+  if (previousQuestion) {
+    goToQuestion(previousQuestion.questionId)
+  }
+}
+
+const goToNextQuestion = () => {
+  if (isLastVisibleQuestion.value) {
+    return
+  }
+  const nextQuestion = visibleQuestions.value[normalizedCurrentQuestionIndex.value + 1]
+  if (nextQuestion) {
+    goToQuestion(nextQuestion.questionId)
   }
 }
 
@@ -490,7 +633,8 @@ const persistDraftState = async ({
   updatedAt = Date.now(),
   lastSyncedAt = syncState.lastSyncedAt,
   dirty = true,
-  answersMap = buildAnswerMapFromState()
+  answersMap = buildAnswerMapFromState(),
+  markedIds = buildMarkedQuestionIdsFromState()
 } = {}) => {
   if (!syncState.userId) {
     return null
@@ -502,26 +646,34 @@ const persistDraftState = async ({
     userId: syncState.userId,
     examId,
     answers: answersMap,
+    markedQuestionIds: markedIds,
     updatedAt: syncState.updatedAt,
     lastSyncedAt: syncState.lastSyncedAt,
     dirty: syncState.dirty
   })
 }
 
-const scheduleDraftSave = () => {
+const resolveDraftUpdatedAt = (updateAnswerTimestamp) =>
+  updateAnswerTimestamp ? Date.now() : (syncState.updatedAt || Date.now())
+
+const scheduleDraftSave = ({ dirty = true, updateAnswerTimestamp = true } = {}) => {
   if (!syncState.userId) {
     return
   }
+  pendingDraftDirty = pendingDraftDirty || dirty
+  pendingDraftAnswerTimestampUpdate = pendingDraftAnswerTimestampUpdate || updateAnswerTimestamp
   if (draftSaveTimer) {
     clearTimeout(draftSaveTimer)
   }
   draftSaveTimer = setTimeout(() => {
     draftSaveTimer = null
     void persistDraftState({
-      updatedAt: Date.now(),
+      updatedAt: resolveDraftUpdatedAt(pendingDraftAnswerTimestampUpdate),
       lastSyncedAt: syncState.lastSyncedAt,
-      dirty: true
+      dirty: pendingDraftDirty ? true : syncState.dirty
     })
+    pendingDraftDirty = false
+    pendingDraftAnswerTimestampUpdate = false
   }, 400)
 }
 
@@ -532,10 +684,12 @@ const flushDraftSave = () => {
   clearTimeout(draftSaveTimer)
   draftSaveTimer = null
   void persistDraftState({
-    updatedAt: Date.now(),
+    updatedAt: resolveDraftUpdatedAt(pendingDraftAnswerTimestampUpdate),
     lastSyncedAt: syncState.lastSyncedAt,
-    dirty: true
+    dirty: pendingDraftDirty ? true : syncState.dirty
   })
+  pendingDraftDirty = false
+  pendingDraftAnswerTimestampUpdate = false
 }
 
 const syncDirtyDraft = async ({ force = false, notify = false } = {}) => {
@@ -597,6 +751,7 @@ const submit = async (needConfirm = true) => {
     await clearDraft(syncState.userId, examId)
   }
   syncState.dirty = false
+  await exitFullscreenForExamEnd()
   try {
     await ElMessageBox.confirm('试卷已提交，系统正在处理成绩。是否前往考试结果中心查看成绩状态？', '提交成功', {
       confirmButtonText: '查看考试结果',
@@ -612,6 +767,18 @@ const submit = async (needConfirm = true) => {
     if (action === 'cancel') {
       router.push('/student/exams')
     }
+  }
+}
+
+const exitFullscreenForExamEnd = async () => {
+  if (!document.fullscreenElement || typeof document.exitFullscreen !== 'function') {
+    return
+  }
+  endingExam.value = true
+  try {
+    await document.exitFullscreen()
+  } catch {
+    // Browser may reject exitFullscreen when the document is no longer active.
   }
 }
 
@@ -658,6 +825,9 @@ const onVisibility = () => {
 }
 
 const onFullscreenChange = () => {
+  if (endingExam.value) {
+    return
+  }
   if (!document.fullscreenElement) {
     reportAntiCheatEvent('FULLSCREEN_EXIT', 0, { mode: 'browser-fullscreen' })
   }
@@ -721,9 +891,11 @@ const bootstrapExam = async () => {
   let draftUpdatedAt = serverDraftTime || Date.now()
   let lastSyncedAt = serverDraftTime || Date.now()
   let dirty = false
+  let selectedMarkedQuestionIds = []
 
   if (localDraft && Number(localDraft.updatedAt || 0) > serverDraftTime) {
     selectedAnswers = localDraft.answers || {}
+    selectedMarkedQuestionIds = localDraft.markedQuestionIds || []
     selectedMode = 'local'
     draftUpdatedAt = Number(localDraft.updatedAt) || Date.now()
     lastSyncedAt = Number(localDraft.lastSyncedAt || 0) || null
@@ -739,6 +911,7 @@ const bootstrapExam = async () => {
   }
 
   applyAnswerMap(selectedAnswers)
+  applyMarkedQuestionIds(selectedMarkedQuestionIds)
   await persistDraftState({
     updatedAt: draftUpdatedAt,
     lastSyncedAt,
@@ -782,14 +955,29 @@ watch(answers, () => {
   if (!syncState.initialized || !state.questions.length) {
     return
   }
-  scheduleDraftSave()
+  scheduleDraftSave({ dirty: true, updateAnswerTimestamp: true })
 }, { deep: true })
+
+watch(visibleQuestions, (questions) => {
+  if (!questions.length) {
+    currentQuestionId.value = ''
+    return
+  }
+  const hasCurrentQuestion = questions.some((question) =>
+    toStoredQuestionId(question.questionId) === currentQuestionId.value
+  )
+  if (!hasCurrentQuestion) {
+    currentQuestionId.value = toStoredQuestionId(questions[0].questionId)
+  }
+}, { immediate: true })
 
 onMounted(async () => {
   await bootstrapExam()
 })
 
 onBeforeUnmount(() => {
+  endingExam.value = true
+  void exitFullscreenForExamEnd()
   if (timer) clearInterval(timer)
   if (snapshotTimer) clearInterval(snapshotTimer)
   if (bannerResetTimer) clearTimeout(bannerResetTimer)
@@ -893,8 +1081,8 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 32px;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 24px;
   padding: 20px 32px 32px;
 }
 
@@ -905,65 +1093,119 @@ onBeforeUnmount(() => {
 }
 
 .outline-card {
-  padding: 20px;
+  padding: 12px 10px;
   border: 1px solid rgba(255, 255, 255, 0.6);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--bg-card);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   box-shadow: var(--shadow-soft);
 }
 
-.outline-card__title {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-main);
+.outline-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-.outline-card__title::before {
-  content: '📝';
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .outline-grid {
-  margin-top: 16px;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: min(54vh, 520px);
+  overflow-y: auto;
+  padding: 2px 4px 2px 0;
 }
 
 .outline-item {
+  position: relative;
+  width: 100%;
   height: 36px;
-  border: 1px solid rgba(13, 148, 136, 0.2);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.5);
-  color: var(--text-muted);
-  font-weight: 600;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #64748b;
+  font-weight: 700;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: all var(--transition-fast);
 }
 
 .outline-item:hover {
-  transform: translateY(-2px);
-  border-color: var(--brand);
   color: var(--brand);
-  background: white;
-  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.1);
+  background: rgba(13, 148, 136, 0.06);
+}
+
+.outline-item__marker {
+  position: absolute;
+  top: 0;
+  left: calc(50% - 16px);
+  z-index: 1;
+  width: 9px;
+  height: 13px;
+  border-radius: 2px 2px 1px 1px;
+  background: #f59e0b;
+  opacity: 0;
+}
+
+.outline-item__marker::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -4px;
+  border-top: 4px solid #f59e0b;
+  border-right: 4px solid transparent;
+}
+
+.outline-item__number {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(13, 148, 136, 0.24);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.7);
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+  transition: all var(--transition-fast);
 }
 
 .outline-item--done {
-  border-color: transparent;
-  background: linear-gradient(135deg, var(--brand), var(--brand-hover));
+  background: transparent;
   color: white;
-  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.2);
 }
 
-.outline-tip {
-  margin: 16px 0 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--text-muted);
+.outline-item--done .outline-item__number {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--brand), var(--brand-hover));
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.18);
+}
+
+.outline-item--marked {
+  background: transparent;
+}
+
+.outline-item--marked .outline-item__marker {
+  opacity: 1;
+}
+
+.outline-item--done.outline-item--marked {
+  box-shadow: none;
+}
+
+.outline-item--marked .outline-item__number {
+  border-color: #f59e0b;
+}
+
+.outline-item--active .outline-item__number {
+  outline: 3px solid rgba(15, 118, 110, 0.18);
 }
 
 .question-list {
@@ -998,6 +1240,14 @@ onBeforeUnmount(() => {
   margin-bottom: 20px;
   padding-bottom: 16px;
   border-bottom: 1px solid rgba(13, 148, 136, 0.1);
+}
+
+.q-item__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .q-item__index {
@@ -1061,6 +1311,24 @@ onBeforeUnmount(() => {
 
 .q-answer {
   margin-top: 28px;
+}
+
+.q-navigation {
+  margin-top: 34px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(13, 148, 136, 0.1);
+  display: grid;
+  grid-template-columns: minmax(120px, auto) 1fr minmax(120px, auto);
+  align-items: center;
+  gap: 16px;
+}
+
+.q-navigation__progress {
+  justify-self: center;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .option-list {
@@ -1165,6 +1433,17 @@ onBeforeUnmount(() => {
   }
   .q-item {
     padding: 20px;
+  }
+  .q-item__head,
+  .q-item__actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .q-navigation {
+    grid-template-columns: 1fr;
+  }
+  .q-navigation__progress {
+    order: -1;
   }
 }
 </style>
