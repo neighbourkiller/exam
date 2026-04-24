@@ -186,6 +186,60 @@ class ExamProctoringServiceTest {
     }
 
     @Test
+    void timelineShouldReturnEvidenceJsonAndHighRiskForEvidenceEvents() {
+        Exam exam = buildExam();
+        when(examMapper.selectById(1L)).thenReturn(exam);
+        when(userMapper.selectRoleCodes(200L)).thenReturn(List.of("TEACHER"));
+        when(examTargetClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(buildTargetClass(1L, 11L)));
+        when(teachingClassMapper.selectBatchIds(any())).thenReturn(List.of(buildTeachingClass(11L, "一班")));
+        when(studentTeachingClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(buildEnrollment(1001L, 11L)));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(buildUser(1001L, "alice", "Alice")));
+        when(examSessionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
+            buildSession(1001L, SessionStatus.ANSWERING.name(), LocalDateTime.now().minusMinutes(5), null, LocalDateTime.now())
+        ));
+        when(submissionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        AntiCheatEvent evidenceEvent = buildEvent(1L, 1001L, "SCREEN_SHARE_ENDED", LocalDateTime.now().minusMinutes(1), 0L);
+        evidenceEvent.setEvidenceJson("[{\"source\":\"SCREEN\",\"url\":\"http://localhost/evidence.jpg\"}]");
+        when(antiCheatEventMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(evidenceEvent));
+
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+
+            ProctoringStudentTimelineView timeline = examProctoringService.getStudentTimeline(1L, 1001L);
+
+            assertEquals("HIGH", timeline.getRiskLevel());
+            assertEquals(evidenceEvent.getEvidenceJson(), timeline.getEvents().get(0).getEvidenceJson());
+        }
+    }
+
+    @Test
+    void timelineShouldTreatNavigationLeaveAttemptAsHighRisk() {
+        Exam exam = buildExam();
+        when(examMapper.selectById(1L)).thenReturn(exam);
+        when(userMapper.selectRoleCodes(200L)).thenReturn(List.of("TEACHER"));
+        when(examTargetClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(buildTargetClass(1L, 11L)));
+        when(teachingClassMapper.selectBatchIds(any())).thenReturn(List.of(buildTeachingClass(11L, "一班")));
+        when(studentTeachingClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(buildEnrollment(1001L, 11L)));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(buildUser(1001L, "alice", "Alice")));
+        when(examSessionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
+            buildSession(1001L, SessionStatus.ANSWERING.name(), LocalDateTime.now().minusMinutes(5), null, LocalDateTime.now())
+        ));
+        when(submissionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(antiCheatEventMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
+            buildEvent(1L, 1001L, "NAVIGATION_LEAVE_ATTEMPT", LocalDateTime.now().minusMinutes(1), 0L)
+        ));
+
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+
+            ProctoringStudentTimelineView timeline = examProctoringService.getStudentTimeline(1L, 1001L);
+
+            assertEquals("HIGH", timeline.getRiskLevel());
+            assertEquals("NAVIGATION_LEAVE_ATTEMPT", timeline.getLatestEventType());
+        }
+    }
+
+    @Test
     void listStudentsShouldReturnDispositionInfo() {
         Exam exam = buildExam();
         when(examMapper.selectById(1L)).thenReturn(exam);

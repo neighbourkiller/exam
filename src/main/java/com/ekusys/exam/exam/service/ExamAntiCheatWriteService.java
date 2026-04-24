@@ -34,6 +34,7 @@ public class ExamAntiCheatWriteService {
         event.setEventType(request.getEventType());
         event.setDurationMs(request.getDurationMs());
         event.setPayload(request.getPayload());
+        event.setEvidenceJson(request.getEvidenceJson());
         event.setEventTime(LocalDateTime.now());
         antiCheatEventMapper.insert(event);
         log.info("Anti-cheat event recorded: examId={}, studentId={}, eventType={}",

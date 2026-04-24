@@ -43,17 +43,27 @@
         </el-table-column>
       </el-table>
     </el-card>
+
+    <PreExamCheckDialog
+      v-model="checkVisible"
+      :exam="pendingExam"
+      @passed="enterPendingExam"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { studentExamsApi } from '../../api'
 import { formatDateTime, parseDateTime } from '../../utils/datetime'
+import PreExamCheckDialog from './PreExamCheckDialog.vue'
 
 const router = useRouter()
 const exams = ref([])
+const checkVisible = ref(false)
+const pendingExam = ref(null)
 const disallowedStatuses = new Set(['FINISHED', 'TERMINATED'])
 
 const load = async () => {
@@ -71,7 +81,26 @@ const canEnter = (exam) => {
 
 const start = (row) => {
   if (!canEnter(row)) return
-  router.push(`/student/exam/${row.examId}`)
+  pendingExam.value = row
+  checkVisible.value = true
+}
+
+const enterPendingExam = async (handoff) => {
+  if (!canEnter(pendingExam.value)) {
+    handoff?.reject?.()
+    ElMessage.warning('当前考试已不可进入，请刷新考试列表后重试。')
+    return
+  }
+  const target = `/student/exam/${pendingExam.value.examId}`
+  handoff?.accept?.()
+  try {
+    const failure = await router.push(target)
+    if (failure) {
+      handoff?.reject?.()
+    }
+  } catch {
+    handoff?.reject?.()
+  }
 }
 
 const getStatusType = (status) => {

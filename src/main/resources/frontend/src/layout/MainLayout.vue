@@ -17,6 +17,7 @@
           <!-- 学生端菜单 -->
           <template v-if="isStudent">
             <el-menu-item index="/student/exams">我的考试</el-menu-item>
+            <el-menu-item index="/student/environment-check">环境检测</el-menu-item>
             <el-menu-item index="/student/results">考试结果</el-menu-item>
           </template>
 

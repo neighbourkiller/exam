@@ -284,6 +284,21 @@
               <span>{{ formatDateTime(event.eventTime) }}</span>
             </div>
             <p class="timeline-item__duration">{{ event.durationMs ? formatDuration(event.durationMs) : '瞬时事件' }}</p>
+            <div v-if="parseEvidence(event.evidenceJson).length" class="timeline-evidence">
+              <figure
+                v-for="item in parseEvidence(event.evidenceJson)"
+                :key="item.objectKey || item.url"
+                class="timeline-evidence__item"
+              >
+                <el-tag size="small" effect="light">{{ evidenceSourceLabel(item.source) }}</el-tag>
+                <el-image
+                  :src="item.url"
+                  :preview-src-list="parseEvidence(event.evidenceJson).map(evidence => evidence.url)"
+                  fit="cover"
+                  class="timeline-evidence__image"
+                />
+              </figure>
+            </div>
             <pre v-if="event.payload" class="timeline-item__payload">{{ formatPayload(event.payload) }}</pre>
           </div>
           <el-empty v-if="!timeline.events.length" description="暂无学生异常事件" />
@@ -384,7 +399,16 @@ const EVENT_TYPE_MAP = {
   PASTE_ATTEMPT: '粘贴操作',
   CUT_ATTEMPT: '剪切操作',
   CONTEXT_MENU: '右键菜单',
-  NETWORK_OFFLINE: '网络离线'
+  NETWORK_OFFLINE: '网络离线',
+  CAMERA_START_FAILED: '摄像头启动失败',
+  CAMERA_STREAM_ENDED: '摄像头画面中断',
+  CAMERA_TRACK_MUTED: '摄像头画面暂停',
+  CAMERA_FRAME_DARK: '摄像头画面异常',
+  MULTI_MONITOR_DETECTED: '检测到多个显示器',
+  SCREEN_CHECK_UNAVAILABLE: '无法检测显示器',
+  SCREEN_SHARE_START_FAILED: '屏幕共享启动失败',
+  SCREEN_SHARE_ENDED: '屏幕共享中断',
+  NAVIGATION_LEAVE_ATTEMPT: '尝试离开考试页'
 }
 
 const formatEventType = (type) => EVENT_TYPE_MAP[type] || type || '--'
@@ -429,6 +453,26 @@ const formatPayload = (payload) => {
   } catch {
     return payload
   }
+}
+
+const parseEvidence = (evidenceJson) => {
+  if (!evidenceJson) {
+    return []
+  }
+  try {
+    const parsed = JSON.parse(evidenceJson)
+    return Array.isArray(parsed)
+      ? parsed.filter((item) => item?.url)
+      : []
+  } catch {
+    return []
+  }
+}
+
+const evidenceSourceLabel = (source) => {
+  if (source === 'SCREEN') return '屏幕截图'
+  if (source === 'CAMERA') return '摄像头画面'
+  return source || '证据图片'
 }
 
 const syncRouteQuery = () => {
@@ -863,6 +907,29 @@ onBeforeUnmount(() => {
   background: #0f172a;
   color: #e2e8f0;
   font-size: 12px;
+}
+
+.timeline-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.timeline-evidence__item {
+  display: grid;
+  gap: 6px;
+  width: 160px;
+  margin: 0;
+}
+
+.timeline-evidence__image {
+  width: 160px;
+  height: 96px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: #f8fafc;
 }
 
 @media (max-width: 1200px) {

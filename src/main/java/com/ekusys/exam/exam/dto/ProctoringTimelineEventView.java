@@ -12,4 +12,5 @@ public class ProctoringTimelineEventView {
     private LocalDateTime eventTime;
     private Long durationMs;
     private String payload;
+    private String evidenceJson;
 }

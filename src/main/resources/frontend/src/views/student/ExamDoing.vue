@@ -15,6 +15,16 @@
           <span>已答题数</span>
           <strong>{{ answeredCount }}/{{ state.questions.length }}</strong>
         </div>
+        <div :class="['status-pill', 'status-pill--sync', `status-pill--${saveStatus.type}`]">
+          <span>保存状态</span>
+          <strong>{{ saveStatus.title }}</strong>
+          <small>{{ saveStatus.detail }}</small>
+        </div>
+        <div :class="['status-pill', 'status-pill--sync', `status-pill--${cameraStatus.type}`]">
+          <span>摄像头监控</span>
+          <strong>{{ cameraStatus.title }}</strong>
+          <small>{{ cameraStatus.detail }}</small>
+        </div>
       </div>
     </header>
 
@@ -179,10 +189,11 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { antiCheatApi, snapshotApi, startExamApi, submitExamApi } from '../../api'
+import { antiCheatApi, snapshotApi, startExamApi, submitExamApi, uploadAntiCheatEvidenceApi } from '../../api'
 import { useAuthStore } from '../../stores/auth'
+import { useCameraProctoring } from '../../composables/useCameraProctoring'
 import { clearDraft, loadDraft, saveDraft } from '../../utils/examDraftStore'
 import { parseDateTime } from '../../utils/datetime'
 
@@ -206,6 +217,8 @@ const blurStartedAt = ref(null)
 const hiddenStartedAt = ref(null)
 const offlineStartedAt = ref(null)
 const endingExam = ref(false)
+const allowLeaveExam = ref(false)
+const isOnline = ref(navigator.onLine)
 const bannerState = reactive({
   type: 'warning',
   title: '考试页面处于监考模式',
@@ -224,14 +237,26 @@ let bannerResetTimer = null
 let draftSaveTimer = null
 let pendingDraftDirty = false
 let pendingDraftAnswerTimestampUpdate = false
+let navigationLeaveReporting = false
+let lastNavigationLeaveAttemptAt = 0
 const recentEventTimes = new Map()
+const cameraProctoring = useCameraProctoring({
+  reportEvent: (eventType, durationMs, payload, evidence = []) =>
+    reportAntiCheatEvent(eventType, durationMs, payload, evidence),
+  uploadEvidence: (blob, source, eventType) => uploadEvidence(blob, source, eventType)
+})
 const syncState = reactive({
   userId: null,
   initialized: false,
   dirty: false,
   syncing: false,
   updatedAt: 0,
-  lastSyncedAt: null
+  lastSyncedAt: null,
+  localSaving: false,
+  localSavedAt: null,
+  localSaveFailed: false,
+  syncErrorAt: null,
+  lastSyncErrorMessage: ''
 })
 
 const answeredCount = computed(() =>
@@ -278,6 +303,99 @@ const formattedTimeLeft = computed(() => {
   const minutes = String(Math.floor((total % 3600) / 60)).padStart(2, '0')
   const seconds = String(total % 60).padStart(2, '0')
   return `${hours}:${minutes}:${seconds}`
+})
+
+const formatClockTime = (timestamp) => {
+  if (!timestamp) {
+    return '--:--:--'
+  }
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) {
+    return '--:--:--'
+  }
+  return date.toLocaleTimeString('zh-CN', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
+
+const saveStatus = computed(() => {
+  if (syncState.localSaveFailed) {
+    return {
+      type: 'danger',
+      title: '本机保存失败',
+      detail: syncState.lastSyncErrorMessage || '请勿关闭页面，系统会继续尝试。'
+    }
+  }
+  if (syncState.localSaving) {
+    return {
+      type: 'info',
+      title: '本机保存中',
+      detail: '正在写入本地草稿。'
+    }
+  }
+  if (!isOnline.value) {
+    return {
+      type: 'warning',
+      title: '离线，本机已保存',
+      detail: syncState.localSavedAt ? `保存于 ${formatClockTime(syncState.localSavedAt)}` : '恢复网络后会自动同步。'
+    }
+  }
+  if (syncState.syncing) {
+    return {
+      type: 'warning',
+      title: '正在同步到服务器',
+      detail: '请保持网络连接。'
+    }
+  }
+  if (syncState.syncErrorAt && syncState.dirty) {
+    return {
+      type: 'danger',
+      title: '同步失败，将自动重试',
+      detail: syncState.lastSyncErrorMessage || `失败于 ${formatClockTime(syncState.syncErrorAt)}`
+    }
+  }
+  if (syncState.dirty) {
+    return {
+      type: 'warning',
+      title: '已保存到本机',
+      detail: '等待同步到服务器。'
+    }
+  }
+  if (syncState.lastSyncedAt) {
+    return {
+      type: 'success',
+      title: '已同步到服务器',
+      detail: `同步于 ${formatClockTime(syncState.lastSyncedAt)}`
+    }
+  }
+  if (syncState.localSavedAt) {
+    return {
+      type: 'success',
+      title: '已保存到本机',
+      detail: `保存于 ${formatClockTime(syncState.localSavedAt)}`
+    }
+  }
+  return {
+    type: 'info',
+    title: '准备保存',
+    detail: '开始答题后自动保存。'
+  }
+})
+
+const cameraStatus = computed(() => {
+  const type = cameraProctoring.state.status === 'danger'
+    ? 'danger'
+    : cameraProctoring.state.status === 'success'
+      ? 'success'
+      : 'info'
+  return {
+    type,
+    title: cameraProctoring.state.title,
+    detail: cameraProctoring.state.detail
+  }
 })
 
 const questionAnchorId = (questionId) => `question-${questionId}`
@@ -565,16 +683,52 @@ const warningMessageForEvent = (eventType, durationMs) => {
       return '检测到右键菜单操作，系统已记录。'
     case 'NETWORK_OFFLINE':
       return `网络中断 ${formatDuration(durationMs)}，系统已记录。`
+    case 'CAMERA_START_FAILED':
+      return '考试摄像头启动失败，系统已记录。'
+    case 'CAMERA_STREAM_ENDED':
+      return '摄像头画面中断，系统已记录。'
+    case 'CAMERA_TRACK_MUTED':
+      return '摄像头画面暂停，系统已记录。'
+    case 'CAMERA_FRAME_DARK':
+      return `摄像头画面连续异常 ${formatDuration(durationMs)}，系统已记录。`
+    case 'MULTI_MONITOR_DETECTED':
+      return '检测到多个显示器，系统已记录。'
+    case 'SCREEN_CHECK_UNAVAILABLE':
+      return '无法确认显示器数量，系统已记录。'
+    case 'SCREEN_SHARE_START_FAILED':
+      return '屏幕共享启动失败，系统已记录。'
+    case 'SCREEN_SHARE_ENDED':
+      return '屏幕共享已中断，系统已记录。'
+    case 'NAVIGATION_LEAVE_ATTEMPT':
+      return '考试中不能返回上一页，请继续答题或点击交卷。'
     default:
       return '检测到异常考试行为，系统已记录。'
   }
 }
 
-const reportAntiCheatEvent = async (eventType, durationMs = 0, extraPayload = {}) => {
+const uploadEvidence = async (blob, source, eventType) => {
+  const formData = new FormData()
+  const filename = `${source.toLowerCase()}-${Date.now()}.jpg`
+  formData.append('file', blob, filename)
+  formData.append('source', source)
+  formData.append('eventType', eventType)
+  return uploadAntiCheatEvidenceApi(examId, formData)
+}
+
+const reportAntiCheatEvent = async (eventType, durationMs = 0, extraPayload = {}, evidence = null) => {
   const eventCount = recordRecentEvent(eventType)
   const escalated = eventCount >= 3
     || durationMs > 30_000
     || eventType === 'FULLSCREEN_EXIT'
+    || eventType === 'CAMERA_START_FAILED'
+    || eventType === 'CAMERA_STREAM_ENDED'
+    || eventType === 'MULTI_MONITOR_DETECTED'
+    || eventType === 'SCREEN_CHECK_UNAVAILABLE'
+    || eventType === 'SCREEN_SHARE_START_FAILED'
+    || eventType === 'SCREEN_SHARE_ENDED'
+    || eventType === 'NAVIGATION_LEAVE_ATTEMPT'
+    || (eventType === 'CAMERA_TRACK_MUTED' && eventCount >= 2)
+    || eventType === 'CAMERA_FRAME_DARK'
     || (eventType === 'NETWORK_OFFLINE' && durationMs > 10_000)
   const message = warningMessageForEvent(eventType, durationMs)
   showBanner(
@@ -587,14 +741,31 @@ const reportAntiCheatEvent = async (eventType, durationMs = 0, extraPayload = {}
   } else {
     ElMessage.warning(message)
   }
+
+  let evidenceList = Array.isArray(evidence) ? evidence : []
+  let evidenceUploadError = extraPayload.evidenceUploadError
+  if (escalated && evidence == null) {
+    try {
+      const evidenceResult = await cameraProctoring.captureEvidence(eventType)
+      evidenceList = evidenceResult.evidence
+      evidenceUploadError = evidenceResult.errors.length
+        ? [evidenceUploadError, evidenceResult.errors.join('; ')].filter(Boolean).join('; ')
+        : evidenceUploadError
+    } catch (error) {
+      evidenceUploadError = [evidenceUploadError, error?.message || 'evidence capture failed'].filter(Boolean).join('; ')
+    }
+  }
+
   try {
     await antiCheatApi(examId, {
       eventType,
       durationMs,
       payload: buildAntiCheatPayload({
         eventCount,
-        ...extraPayload
-      })
+        ...extraPayload,
+        evidenceUploadError
+      }),
+      evidenceJson: evidenceList.length ? JSON.stringify(evidenceList) : null
     })
   } catch {
     // ignore
@@ -639,18 +810,32 @@ const persistDraftState = async ({
   if (!syncState.userId) {
     return null
   }
-  syncState.updatedAt = updatedAt
-  syncState.lastSyncedAt = lastSyncedAt ?? null
-  syncState.dirty = Boolean(dirty)
-  return saveDraft({
-    userId: syncState.userId,
-    examId,
-    answers: answersMap,
-    markedQuestionIds: markedIds,
-    updatedAt: syncState.updatedAt,
-    lastSyncedAt: syncState.lastSyncedAt,
-    dirty: syncState.dirty
-  })
+  syncState.localSaving = true
+  try {
+    const nextLastSyncedAt = lastSyncedAt ?? null
+    const record = await saveDraft({
+      userId: syncState.userId,
+      examId,
+      answers: answersMap,
+      markedQuestionIds: markedIds,
+      updatedAt,
+      lastSyncedAt: nextLastSyncedAt,
+      dirty
+    })
+    syncState.updatedAt = updatedAt
+    syncState.lastSyncedAt = nextLastSyncedAt
+    syncState.dirty = Boolean(dirty)
+    syncState.localSavedAt = Date.now()
+    syncState.localSaveFailed = false
+    syncState.lastSyncErrorMessage = ''
+    return record
+  } catch (error) {
+    syncState.localSaveFailed = true
+    syncState.lastSyncErrorMessage = error?.message || '本地草稿保存失败'
+    return null
+  } finally {
+    syncState.localSaving = false
+  }
 }
 
 const resolveDraftUpdatedAt = (updateAnswerTimestamp) =>
@@ -660,6 +845,7 @@ const scheduleDraftSave = ({ dirty = true, updateAnswerTimestamp = true } = {}) 
   if (!syncState.userId) {
     return
   }
+  syncState.localSaving = true
   pendingDraftDirty = pendingDraftDirty || dirty
   pendingDraftAnswerTimestampUpdate = pendingDraftAnswerTimestampUpdate || updateAnswerTimestamp
   if (draftSaveTimer) {
@@ -692,6 +878,90 @@ const flushDraftSave = () => {
   pendingDraftAnswerTimestampUpdate = false
 }
 
+const snapshotHistoryState = (state = window.history.state) => {
+  try {
+    return state == null ? null : JSON.parse(JSON.stringify(state))
+  } catch {
+    return { unavailable: true }
+  }
+}
+
+const currentBrowserPath = () => `${window.location.pathname}${window.location.search}${window.location.hash}`
+
+const isCurrentExamHistoryLocked = () =>
+  Boolean(
+    window.history.state?.examLocked
+    && window.history.state?.examId === examId
+    && window.history.state?.examPath === route.fullPath
+    && currentBrowserPath() === route.fullPath
+  )
+
+const setExamHistoryLock = ({ replace = false } = {}) => {
+  if (allowLeaveExam.value) {
+    return
+  }
+  try {
+    if (isCurrentExamHistoryLocked()) {
+      return
+    }
+    const nextState = {
+      ...(window.history.state || {}),
+      examLocked: true,
+      examId,
+      examPath: route.fullPath
+    }
+    if (replace) {
+      window.history.replaceState(nextState, '', route.fullPath)
+    } else {
+      window.history.pushState(nextState, '', route.fullPath)
+    }
+  } catch {
+    // Route guard still protects in-app navigation if manual history writes are unavailable.
+  }
+}
+
+const saveAndSyncBeforeBlockingLeave = async () => {
+  if (draftSaveTimer) {
+    clearTimeout(draftSaveTimer)
+    draftSaveTimer = null
+    pendingDraftDirty = false
+    pendingDraftAnswerTimestampUpdate = false
+  }
+  await persistDraftState({
+    updatedAt: Date.now(),
+    dirty: true
+  })
+  if (navigator.onLine) {
+    await syncDirtyDraft({ force: true })
+  }
+}
+
+const handleBlockedExamLeave = async ({ source, fromPath, toPath, historyState = null } = {}) => {
+  if (allowLeaveExam.value) {
+    return
+  }
+  const now = Date.now()
+  if (navigationLeaveReporting || now - lastNavigationLeaveAttemptAt < 1200) {
+    showBanner('error', '已阻止离开考试页', '考试中不能返回上一页，请继续答题或点击交卷。', true)
+    return
+  }
+
+  navigationLeaveReporting = true
+  lastNavigationLeaveAttemptAt = now
+  try {
+    await saveAndSyncBeforeBlockingLeave()
+    await reportAntiCheatEvent('NAVIGATION_LEAVE_ATTEMPT', 0, {
+      source,
+      fromPath: fromPath || route.fullPath,
+      toPath: toPath || null,
+      historyState: snapshotHistoryState(historyState),
+      mode: 'exam-navigation-lock'
+    })
+  } finally {
+    navigationLeaveReporting = false
+  }
+}
+
 const syncDirtyDraft = async ({ force = false, notify = false } = {}) => {
   if (!syncState.userId || !syncState.initialized || syncState.syncing) {
     return false
@@ -704,6 +974,8 @@ const syncDirtyDraft = async ({ force = false, notify = false } = {}) => {
   }
 
   syncState.syncing = true
+  syncState.syncErrorAt = null
+  syncState.lastSyncErrorMessage = ''
   const syncVersion = syncState.updatedAt || Date.now()
   try {
     await snapshotApi(examId, {
@@ -722,7 +994,9 @@ const syncDirtyDraft = async ({ force = false, notify = false } = {}) => {
       ElMessage.success('答题进度已同步到服务器')
     }
     return true
-  } catch {
+  } catch (error) {
+    syncState.syncErrorAt = Date.now()
+    syncState.lastSyncErrorMessage = error?.message || '服务器同步失败'
     return false
   } finally {
     syncState.syncing = false
@@ -743,6 +1017,7 @@ const submit = async (needConfirm = true) => {
     await ElMessageBox.confirm('确认提交试卷？提交后不可修改。', '提示')
   }
   await submitExamApi(examId, buildSubmitPayload())
+  allowLeaveExam.value = true
   if (draftSaveTimer) {
     clearTimeout(draftSaveTimer)
     draftSaveTimer = null
@@ -751,6 +1026,7 @@ const submit = async (needConfirm = true) => {
     await clearDraft(syncState.userId, examId)
   }
   syncState.dirty = false
+  cameraProctoring.stop()
   await exitFullscreenForExamEnd()
   try {
     await ElMessageBox.confirm('试卷已提交，系统正在处理成绩。是否前往考试结果中心查看成绩状态？', '提交成功', {
@@ -850,6 +1126,7 @@ const onContextMenu = (event) => {
 }
 
 const onOffline = () => {
+  isOnline.value = false
   if (offlineStartedAt.value == null) {
     offlineStartedAt.value = Date.now()
   }
@@ -857,19 +1134,40 @@ const onOffline = () => {
 }
 
 const onOnline = () => {
+  isOnline.value = true
+  const shouldNotify = syncState.dirty
   if (offlineStartedAt.value == null) {
     resetBanner()
+    void syncDirtyDraft({ force: shouldNotify, notify: shouldNotify })
     return
   }
   const durationMs = Date.now() - offlineStartedAt.value
   offlineStartedAt.value = null
   reportAntiCheatEvent('NETWORK_OFFLINE', durationMs, { recovered: true })
-  const shouldNotify = syncState.dirty
   void syncDirtyDraft({ force: shouldNotify, notify: shouldNotify })
 }
 
-const onBeforeUnload = () => {
+const onBeforeUnload = (event) => {
   flushDraftSave()
+  if (!allowLeaveExam.value) {
+    event.preventDefault()
+    event.returnValue = ''
+    return ''
+  }
+}
+
+const onPopState = (event) => {
+  if (allowLeaveExam.value) {
+    return
+  }
+  const attemptedPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
+  setExamHistoryLock({ replace: attemptedPath === route.fullPath })
+  void handleBlockedExamLeave({
+    source: 'browser-popstate',
+    fromPath: route.fullPath,
+    toPath: attemptedPath,
+    historyState: event?.state || null
+  })
 }
 
 const bootstrapExam = async () => {
@@ -936,6 +1234,7 @@ const bootstrapExam = async () => {
   window.addEventListener('focus', onFocus)
   window.addEventListener('offline', onOffline)
   window.addEventListener('online', onOnline)
+  window.addEventListener('popstate', onPopState)
   window.addEventListener('beforeunload', onBeforeUnload)
   document.addEventListener('visibilitychange', onVisibility)
   document.addEventListener('fullscreenchange', onFullscreenChange)
@@ -943,12 +1242,14 @@ const bootstrapExam = async () => {
   document.addEventListener('paste', onPaste)
   document.addEventListener('cut', onCut)
   document.addEventListener('contextmenu', onContextMenu)
+  setExamHistoryLock({ replace: true })
 
   showRecoveryBanner(selectedMode)
   if (selectedMode === 'local' && navigator.onLine) {
     void syncDirtyDraft({ force: true })
   }
   await tryEnterFullscreen()
+  void cameraProctoring.start()
 }
 
 watch(answers, () => {
@@ -971,6 +1272,20 @@ watch(visibleQuestions, (questions) => {
   }
 }, { immediate: true })
 
+onBeforeRouteLeave(async (to, from) => {
+  if (allowLeaveExam.value) {
+    return true
+  }
+  await handleBlockedExamLeave({
+    source: 'router-leave',
+    fromPath: from.fullPath,
+    toPath: to.fullPath,
+    historyState: window.history.state || null
+  })
+  setExamHistoryLock({ replace: true })
+  return false
+})
+
 onMounted(async () => {
   await bootstrapExam()
 })
@@ -981,11 +1296,13 @@ onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
   if (snapshotTimer) clearInterval(snapshotTimer)
   if (bannerResetTimer) clearTimeout(bannerResetTimer)
+  cameraProctoring.stop()
   flushDraftSave()
   window.removeEventListener('blur', onBlur)
   window.removeEventListener('focus', onFocus)
   window.removeEventListener('offline', onOffline)
   window.removeEventListener('online', onOnline)
+  window.removeEventListener('popstate', onPopState)
   window.removeEventListener('beforeunload', onBeforeUnload)
   document.removeEventListener('visibilitychange', onVisibility)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
@@ -1071,6 +1388,38 @@ onBeforeUnmount(() => {
   font-size: 22px;
   font-weight: 800;
   letter-spacing: 1px;
+}
+
+.status-pill small {
+  margin-top: 4px;
+  max-width: 180px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.status-pill--sync {
+  min-width: 180px;
+}
+
+.status-pill--sync strong {
+  font-size: 16px;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.status-pill--success {
+  background: rgba(16, 185, 129, 0.22);
+}
+
+.status-pill--warning,
+.status-pill--info {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.status-pill--danger {
+  background: rgba(248, 113, 113, 0.26);
 }
 
 .exam-banner {

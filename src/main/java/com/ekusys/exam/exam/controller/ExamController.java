@@ -2,6 +2,7 @@ package com.ekusys.exam.exam.controller;
 
 import com.ekusys.exam.common.api.ApiResponse;
 import com.ekusys.exam.common.audit.AuditOperation;
+import com.ekusys.exam.exam.dto.AntiCheatEvidenceUploadView;
 import com.ekusys.exam.exam.dto.AntiCheatEventRequest;
 import com.ekusys.exam.exam.dto.ExamCreateRequest;
 import com.ekusys.exam.exam.dto.ProctoringDispositionRequest;
@@ -17,10 +18,12 @@ import com.ekusys.exam.exam.dto.TeacherExamView;
 import com.ekusys.exam.exam.dto.TeachingClassOptionView;
 import com.ekusys.exam.exam.dto.SubmitExamRequest;
 import com.ekusys.exam.exam.dto.SubmitResultView;
+import com.ekusys.exam.exam.service.ExamAntiCheatEvidenceService;
 import com.ekusys.exam.exam.service.ExamService;
 import com.ekusys.exam.exam.service.ExamProctoringService;
 import jakarta.validation.Valid;
 import java.util.List;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -28,7 +31,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/v1/exams")
@@ -36,10 +41,14 @@ public class ExamController {
 
     private final ExamService examService;
     private final ExamProctoringService examProctoringService;
+    private final ExamAntiCheatEvidenceService examAntiCheatEvidenceService;
 
-    public ExamController(ExamService examService, ExamProctoringService examProctoringService) {
+    public ExamController(ExamService examService,
+                          ExamProctoringService examProctoringService,
+                          ExamAntiCheatEvidenceService examAntiCheatEvidenceService) {
         this.examService = examService;
         this.examProctoringService = examProctoringService;
+        this.examAntiCheatEvidenceService = examAntiCheatEvidenceService;
     }
 
     @PostMapping
@@ -136,6 +145,15 @@ public class ExamController {
     public ApiResponse<Void> antiCheat(@PathVariable Long examId, @Valid @RequestBody AntiCheatEventRequest request) {
         examService.recordAntiCheatEvent(examId, request);
         return ApiResponse.ok("记录成功", null);
+    }
+
+    @PostMapping(value = "/{examId}/anti-cheat-evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('STUDENT')")
+    public ApiResponse<AntiCheatEvidenceUploadView> antiCheatEvidence(@PathVariable Long examId,
+                                                                      @RequestParam("file") MultipartFile file,
+                                                                      @RequestParam("source") String source,
+                                                                      @RequestParam("eventType") String eventType) {
+        return ApiResponse.ok("证据上传成功", examAntiCheatEvidenceService.upload(examId, file, source, eventType));
     }
 
     @PostMapping("/{examId}/submit")

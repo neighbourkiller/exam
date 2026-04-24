@@ -264,6 +264,7 @@ CREATE TABLE IF NOT EXISTS anti_cheat_event (
     event_time DATETIME NOT NULL,
     duration_ms BIGINT,
     payload TEXT,
+    evidence_json TEXT,
     create_time DATETIME,
     update_time DATETIME,
     create_by BIGINT,

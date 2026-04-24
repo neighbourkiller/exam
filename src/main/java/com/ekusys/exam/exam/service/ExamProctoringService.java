@@ -64,6 +64,15 @@ public class ExamProctoringService {
     private static final String EVENT_CUT_ATTEMPT = "CUT_ATTEMPT";
     private static final String EVENT_CONTEXT_MENU = "CONTEXT_MENU";
     private static final String EVENT_NETWORK_OFFLINE = "NETWORK_OFFLINE";
+    private static final String EVENT_CAMERA_START_FAILED = "CAMERA_START_FAILED";
+    private static final String EVENT_CAMERA_STREAM_ENDED = "CAMERA_STREAM_ENDED";
+    private static final String EVENT_CAMERA_TRACK_MUTED = "CAMERA_TRACK_MUTED";
+    private static final String EVENT_CAMERA_FRAME_DARK = "CAMERA_FRAME_DARK";
+    private static final String EVENT_MULTI_MONITOR_DETECTED = "MULTI_MONITOR_DETECTED";
+    private static final String EVENT_SCREEN_CHECK_UNAVAILABLE = "SCREEN_CHECK_UNAVAILABLE";
+    private static final String EVENT_SCREEN_SHARE_START_FAILED = "SCREEN_SHARE_START_FAILED";
+    private static final String EVENT_SCREEN_SHARE_ENDED = "SCREEN_SHARE_ENDED";
+    private static final String EVENT_NAVIGATION_LEAVE_ATTEMPT = "NAVIGATION_LEAVE_ATTEMPT";
 
     public static final String DISPOSITION_PENDING_REVIEW = "PENDING_REVIEW";
     public static final String DISPOSITION_CONFIRMED = "CONFIRMED";
@@ -207,6 +216,7 @@ public class ExamProctoringService {
                     .eventTime(event.getEventTime())
                     .durationMs(event.getDurationMs())
                     .payload(event.getPayload())
+                    .evidenceJson(event.getEvidenceJson())
                     .build())
                 .toList())
             .build();
@@ -505,6 +515,10 @@ public class ExamProctoringService {
             case EVENT_FULLSCREEN_EXIT -> 3;
             case EVENT_COPY_ATTEMPT, EVENT_PASTE_ATTEMPT, EVENT_CUT_ATTEMPT, EVENT_CONTEXT_MENU -> 2;
             case EVENT_NETWORK_OFFLINE -> durationMs > 10_000L ? 2 : 0;
+            case EVENT_CAMERA_START_FAILED, EVENT_CAMERA_STREAM_ENDED, EVENT_MULTI_MONITOR_DETECTED,
+                 EVENT_SCREEN_CHECK_UNAVAILABLE, EVENT_SCREEN_SHARE_START_FAILED, EVENT_SCREEN_SHARE_ENDED,
+                 EVENT_NAVIGATION_LEAVE_ATTEMPT -> 8;
+            case EVENT_CAMERA_TRACK_MUTED, EVENT_CAMERA_FRAME_DARK -> 5;
             default -> 0;
         };
     }
