@@ -133,16 +133,27 @@ const confirmEnter = () => {
     ElMessage.warning('请先完成并通过考前检测')
     return
   }
-  passedToExam = true
-  emit('passed')
-  visible.value = false
+  emit('passed', {
+    accept: () => {
+      passedToExam = true
+      visible.value = false
+    },
+    reject: () => {
+      passedToExam = false
+      releaseMediaStreams()
+      visible.value = false
+    }
+  })
 }
 
 const onClosed = () => {
   runSeq += 1
   running.value = false
-  releaseMediaStreams({ includeRetainedScreenShare: !passedToExam })
-  passedToExam = false
+  const keepRetainedScreenShare = passedToExam
+  releaseMediaStreams({ includeRetainedScreenShare: !keepRetainedScreenShare })
+  if (!keepRetainedScreenShare) {
+    passedToExam = false
+  }
 }
 
 watch(() => props.modelValue, (value) => {

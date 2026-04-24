@@ -55,6 +55,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { studentExamsApi } from '../../api'
 import { formatDateTime, parseDateTime } from '../../utils/datetime'
 import PreExamCheckDialog from './PreExamCheckDialog.vue'
@@ -84,9 +85,22 @@ const start = (row) => {
   checkVisible.value = true
 }
 
-const enterPendingExam = () => {
-  if (!canEnter(pendingExam.value)) return
-  router.push(`/student/exam/${pendingExam.value.examId}`)
+const enterPendingExam = async (handoff) => {
+  if (!canEnter(pendingExam.value)) {
+    handoff?.reject?.()
+    ElMessage.warning('当前考试已不可进入，请刷新考试列表后重试。')
+    return
+  }
+  const target = `/student/exam/${pendingExam.value.examId}`
+  handoff?.accept?.()
+  try {
+    const failure = await router.push(target)
+    if (failure) {
+      handoff?.reject?.()
+    }
+  } catch {
+    handoff?.reject?.()
+  }
 }
 
 const getStatusType = (status) => {

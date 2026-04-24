@@ -886,17 +886,35 @@ const snapshotHistoryState = (state = window.history.state) => {
   }
 }
 
-const pushExamHistoryLock = () => {
+const currentBrowserPath = () => `${window.location.pathname}${window.location.search}${window.location.hash}`
+
+const isCurrentExamHistoryLocked = () =>
+  Boolean(
+    window.history.state?.examLocked
+    && window.history.state?.examId === examId
+    && window.history.state?.examPath === route.fullPath
+    && currentBrowserPath() === route.fullPath
+  )
+
+const setExamHistoryLock = ({ replace = false } = {}) => {
   if (allowLeaveExam.value) {
     return
   }
   try {
-    window.history.pushState({
+    if (isCurrentExamHistoryLocked()) {
+      return
+    }
+    const nextState = {
       ...(window.history.state || {}),
       examLocked: true,
       examId,
       examPath: route.fullPath
-    }, '', route.fullPath)
+    }
+    if (replace) {
+      window.history.replaceState(nextState, '', route.fullPath)
+    } else {
+      window.history.pushState(nextState, '', route.fullPath)
+    }
   } catch {
     // Route guard still protects in-app navigation if manual history writes are unavailable.
   }
@@ -1143,7 +1161,7 @@ const onPopState = (event) => {
     return
   }
   const attemptedPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
-  pushExamHistoryLock()
+  setExamHistoryLock({ replace: attemptedPath === route.fullPath })
   void handleBlockedExamLeave({
     source: 'browser-popstate',
     fromPath: route.fullPath,
@@ -1224,7 +1242,7 @@ const bootstrapExam = async () => {
   document.addEventListener('paste', onPaste)
   document.addEventListener('cut', onCut)
   document.addEventListener('contextmenu', onContextMenu)
-  pushExamHistoryLock()
+  setExamHistoryLock({ replace: true })
 
   showRecoveryBanner(selectedMode)
   if (selectedMode === 'local' && navigator.onLine) {
@@ -1264,7 +1282,7 @@ onBeforeRouteLeave(async (to, from) => {
     toPath: to.fullPath,
     historyState: window.history.state || null
   })
-  pushExamHistoryLock()
+  setExamHistoryLock({ replace: true })
   return false
 })
 
