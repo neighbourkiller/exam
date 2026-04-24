@@ -100,7 +100,7 @@
           <el-table-column prop="studentName" label="学生" width="140" />
           <el-table-column prop="submittedAt" label="提交时间" width="180">
             <template #default="{ row }">
-              {{ formatDateTime(row.submittedAt) }}
+              {{ formatDateTime(row.submittedAt, '--') }}
             </template>
           </el-table-column>
           <el-table-column label="学生答案" min-width="360">
@@ -124,6 +124,7 @@ import {
   gradingPendingQuestionsApi,
   gradingQuestionBatchScoreApi
 } from '../../api'
+import { formatDateTime } from '../../utils/datetime'
 
 const groups = ref([])
 const answers = ref([])
@@ -280,23 +281,6 @@ const applyScoreToSelected = async () => {
   } finally {
     submitting.value = false
   }
-}
-
-const formatDateTime = (value) => {
-  if (!value) {
-    return '--'
-  }
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(date)
 }
 
 onMounted(() => {
