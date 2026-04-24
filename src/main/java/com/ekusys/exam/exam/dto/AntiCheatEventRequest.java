@@ -14,4 +14,6 @@ public class AntiCheatEventRequest {
     private Long durationMs;
 
     private String payload;
+
+    private String evidenceJson;
 }

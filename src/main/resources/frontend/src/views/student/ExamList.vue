@@ -43,6 +43,12 @@
         </el-table-column>
       </el-table>
     </el-card>
+
+    <PreExamCheckDialog
+      v-model="checkVisible"
+      :exam="pendingExam"
+      @passed="enterPendingExam"
+    />
   </div>
 </template>
 
@@ -51,9 +57,12 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { studentExamsApi } from '../../api'
 import { formatDateTime, parseDateTime } from '../../utils/datetime'
+import PreExamCheckDialog from './PreExamCheckDialog.vue'
 
 const router = useRouter()
 const exams = ref([])
+const checkVisible = ref(false)
+const pendingExam = ref(null)
 const disallowedStatuses = new Set(['FINISHED', 'TERMINATED'])
 
 const load = async () => {
@@ -71,7 +80,13 @@ const canEnter = (exam) => {
 
 const start = (row) => {
   if (!canEnter(row)) return
-  router.push(`/student/exam/${row.examId}`)
+  pendingExam.value = row
+  checkVisible.value = true
+}
+
+const enterPendingExam = () => {
+  if (!canEnter(pendingExam.value)) return
+  router.push(`/student/exam/${pendingExam.value.examId}`)
 }
 
 const getStatusType = (status) => {

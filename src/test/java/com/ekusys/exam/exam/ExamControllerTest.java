@@ -14,6 +14,8 @@ import com.ekusys.exam.exam.controller.ExamController;
 import com.ekusys.exam.exam.dto.ProctoringDispositionView;
 import com.ekusys.exam.exam.dto.StartExamResponse;
 import com.ekusys.exam.exam.dto.SubmitResultView;
+import com.ekusys.exam.exam.dto.AntiCheatEvidenceUploadView;
+import com.ekusys.exam.exam.service.ExamAntiCheatEvidenceService;
 import com.ekusys.exam.exam.service.ExamProctoringService;
 import com.ekusys.exam.exam.service.ExamService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,7 +29,9 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 
 @WebMvcTest(value = ExamController.class, excludeFilters = @ComponentScan.Filter(
     type = FilterType.ASSIGNABLE_TYPE,
@@ -46,6 +50,9 @@ class ExamControllerTest {
 
     @MockitoBean
     private ExamProctoringService examProctoringService;
+
+    @MockitoBean
+    private ExamAntiCheatEvidenceService examAntiCheatEvidenceService;
 
     @MockitoBean
     private AuthRateLimitService authRateLimitService;
@@ -146,6 +153,38 @@ class ExamControllerTest {
             .andExpect(jsonPath("$.data.status").value("CONFIRMED"))
             .andExpect(jsonPath("$.data.remark").value("已核查"))
             .andExpect(jsonPath("$.data.handledByName").value("teacher1"));
+    }
+
+    @Test
+    void uploadAntiCheatEvidenceShouldReturnEvidenceUrl() throws Exception {
+        when(examAntiCheatEvidenceService.upload(
+            org.mockito.ArgumentMatchers.eq(1L),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.eq("SCREEN"),
+            org.mockito.ArgumentMatchers.eq("FULLSCREEN_EXIT")
+        )).thenReturn(AntiCheatEvidenceUploadView.builder()
+            .url("http://127.0.0.1:19000/question-images/proctoring/1/2/a.jpg")
+            .objectKey("proctoring/1/2/a.jpg")
+            .source("SCREEN")
+            .contentType("image/jpeg")
+            .size(12L)
+            .build());
+
+        MockMultipartFile file = new MockMultipartFile(
+            "file",
+            "evidence.jpg",
+            "image/jpeg",
+            new byte[] {1, 2, 3}
+        );
+
+        mockMvc.perform(multipart("/api/v1/exams/1/anti-cheat-evidence")
+                .file(file)
+                .param("source", "SCREEN")
+                .param("eventType", "FULLSCREEN_EXIT"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.data.source").value("SCREEN"))
+            .andExpect(jsonPath("$.data.url").value("http://127.0.0.1:19000/question-images/proctoring/1/2/a.jpg"));
     }
 }
 

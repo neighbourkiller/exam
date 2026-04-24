@@ -18,4 +18,5 @@ public class AntiCheatEvent extends BaseEntity {
     private LocalDateTime eventTime;
     private Long durationMs;
     private String payload;
+    private String evidenceJson;
 }

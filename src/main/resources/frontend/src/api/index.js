@@ -36,6 +36,9 @@ export const startExamApi = (id) => http.post(`/exams/${id}/start`)
 export const snapshotApi = (id, data) => http.post(`/exams/${id}/snapshot`, data)
 export const submitExamApi = (id, data) => http.post(`/exams/${id}/submit`, data)
 export const antiCheatApi = (id, data) => http.post(`/exams/${id}/anti-cheat-events`, data)
+export const uploadAntiCheatEvidenceApi = (id, formData) => http.post(`/exams/${id}/anti-cheat-evidence`, formData, {
+  headers: { 'Content-Type': 'multipart/form-data' }
+})
 
 export const gradingPendingApi = () => http.get('/grading/pending')
 export const gradingScoreApi = (submissionId, data) => http.post(`/grading/${submissionId}/subjective-score`, data)

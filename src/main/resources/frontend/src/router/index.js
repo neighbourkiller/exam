@@ -14,6 +14,7 @@ const TeacherAnalytics = () => import('../views/teacher/AnalyticsView.vue')
 const StudentExamList = () => import('../views/student/ExamList.vue')
 const StudentExamDoing = () => import('../views/student/ExamDoing.vue')
 const StudentResults = () => import('../views/student/StudentResults.vue')
+const StudentEnvironmentCheck = () => import('../views/student/EnvironmentCheck.vue')
 const AdminUser = () => import('../views/admin/UserManage.vue')
 const AdminCourse = () => import('../views/admin/CourseManage.vue')
 
@@ -32,6 +33,7 @@ const routes = [
       { path: 'teacher/grading', component: TeacherGrading, meta: { roles: ['TEACHER', 'ADMIN'] } },
       { path: 'teacher/analytics', component: TeacherAnalytics, meta: { roles: ['TEACHER', 'ADMIN'] } },
       { path: 'student/exams', component: StudentExamList, meta: { roles: ['STUDENT'] } },
+      { path: 'student/environment-check', component: StudentEnvironmentCheck, meta: { roles: ['STUDENT'] } },
       { path: 'student/results', component: StudentResults, meta: { roles: ['STUDENT'] } },
       { path: 'student/exam/:id', component: StudentExamDoing, meta: { roles: ['STUDENT'], examFullscreen: true } },
       { path: 'student/result', redirect: '/student/results', meta: { roles: ['STUDENT'] } },
