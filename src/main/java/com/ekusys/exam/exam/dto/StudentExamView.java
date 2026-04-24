@@ -16,4 +16,6 @@ public class StudentExamView {
     private Integer durationMinutes;
     private String status;
     private Boolean submitted;
+    private String proctoringLevel;
+    private ProctoringPolicyView proctoringPolicy;
 }

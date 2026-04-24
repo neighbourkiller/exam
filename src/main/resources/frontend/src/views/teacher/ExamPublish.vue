@@ -80,6 +80,64 @@
           </el-option>
         </el-select>
       </el-form-item>
+      <el-form-item label="防作弊策略">
+        <div class="policy-editor">
+          <el-radio-group v-model="form.proctoringLevel" @change="applyPolicyPreset">
+            <el-radio-button label="LOW">宽松</el-radio-button>
+            <el-radio-button label="STANDARD">标准</el-radio-button>
+            <el-radio-button label="STRICT">严格</el-radio-button>
+            <el-radio-button label="CUSTOM">自定义</el-radio-button>
+          </el-radio-group>
+          <div class="policy-grid">
+            <el-checkbox v-model="form.proctoringPolicy.trackWindowBlur" :disabled="form.proctoringLevel !== 'CUSTOM'">记录窗口失焦</el-checkbox>
+            <el-checkbox v-model="form.proctoringPolicy.trackPageHidden" :disabled="form.proctoringLevel !== 'CUSTOM'">记录切屏/隐藏</el-checkbox>
+            <el-checkbox v-model="form.proctoringPolicy.trackNavigationLeave" :disabled="form.proctoringLevel !== 'CUSTOM'">记录离开页面</el-checkbox>
+            <el-checkbox v-model="form.proctoringPolicy.trackCopyPaste" :disabled="form.proctoringLevel !== 'CUSTOM'">记录复制粘贴</el-checkbox>
+            <el-checkbox v-model="form.proctoringPolicy.trackLongInactivity" :disabled="form.proctoringLevel !== 'CUSTOM'">记录长时间无操作</el-checkbox>
+            <el-checkbox v-model="form.proctoringPolicy.requireFullscreen" :disabled="form.proctoringLevel !== 'CUSTOM'">要求全屏</el-checkbox>
+            <el-checkbox v-model="form.proctoringPolicy.requireCamera" :disabled="form.proctoringLevel !== 'CUSTOM'">要求摄像头</el-checkbox>
+            <el-checkbox v-model="form.proctoringPolicy.requireMicrophone" :disabled="form.proctoringLevel !== 'CUSTOM'">要求麦克风</el-checkbox>
+            <el-checkbox v-model="form.proctoringPolicy.requireScreenShare" :disabled="form.proctoringLevel !== 'CUSTOM'">要求屏幕共享</el-checkbox>
+            <el-checkbox v-model="form.proctoringPolicy.blockMultiMonitor" :disabled="form.proctoringLevel !== 'CUSTOM'">拦截多显示器</el-checkbox>
+            <el-checkbox v-model="form.proctoringPolicy.captureEvidence" :disabled="form.proctoringLevel !== 'CUSTOM'">高风险抓取证据</el-checkbox>
+          </div>
+          <el-row :gutter="12" class="policy-numbers">
+            <el-col :span="8">
+              <el-input-number
+                v-model="form.proctoringPolicy.inactivityThresholdSeconds"
+                :disabled="form.proctoringLevel !== 'CUSTOM'"
+                :min="30"
+                :max="1800"
+                :step="30"
+                controls-position="right"
+              />
+              <span>无操作阈值(秒)</span>
+            </el-col>
+            <el-col :span="8">
+              <el-input-number
+                v-model="form.proctoringPolicy.offscreenLongThresholdSeconds"
+                :disabled="form.proctoringLevel !== 'CUSTOM'"
+                :min="5"
+                :max="600"
+                :step="5"
+                controls-position="right"
+              />
+              <span>离屏长时阈值(秒)</span>
+            </el-col>
+            <el-col :span="8">
+              <el-input-number
+                v-model="form.proctoringPolicy.repeatEventThreshold"
+                :disabled="form.proctoringLevel !== 'CUSTOM'"
+                :min="2"
+                :max="20"
+                :step="1"
+                controls-position="right"
+              />
+              <span>重复事件升级次数</span>
+            </el-col>
+          </el-row>
+        </div>
+      </el-form-item>
       <el-button type="primary" @click="createExam">创建考试</el-button>
       <el-button @click="loadPaperOptions">刷新试卷选项</el-button>
       <el-button @click="loadTeachingClasses">刷新教学班选项</el-button>
@@ -96,6 +154,11 @@
       </el-table-column>
       <el-table-column label="结束时间" width="190">
         <template #default="{ row }">{{ formatDateTime(row.endTime) }}</template>
+      </el-table-column>
+      <el-table-column label="防作弊策略" width="120">
+        <template #default="{ row }">
+          <el-tag effect="plain">{{ policyLevelLabel(row.proctoringLevel || row.proctoringPolicy?.level) }}</el-tag>
+        </template>
       </el-table-column>
       <el-table-column prop="status" label="状态" width="110" />
       <el-table-column label="操作" width="240">
@@ -144,6 +207,73 @@ import { addMinutesToDateTime, formatDateTime, normalizeDateTimeToMinute } from 
 
 const defaultStartTime = normalizeDateTimeToMinute(new Date())
 const router = useRouter()
+const POLICY_PRESETS = {
+  LOW: {
+    level: 'LOW',
+    trackWindowBlur: true,
+    trackPageHidden: true,
+    trackNavigationLeave: true,
+    trackFullscreenExit: false,
+    trackCopyPaste: true,
+    trackContextMenu: true,
+    trackNetworkOffline: true,
+    trackLongInactivity: true,
+    requireFullscreen: false,
+    requireCamera: false,
+    requireMicrophone: false,
+    requireScreenShare: false,
+    blockMultiMonitor: false,
+    captureEvidence: false,
+    inactivityThresholdSeconds: 300,
+    offscreenLongThresholdSeconds: 60,
+    repeatEventWindowMinutes: 10,
+    repeatEventThreshold: 4
+  },
+  STANDARD: {
+    level: 'STANDARD',
+    trackWindowBlur: true,
+    trackPageHidden: true,
+    trackNavigationLeave: true,
+    trackFullscreenExit: true,
+    trackCopyPaste: true,
+    trackContextMenu: true,
+    trackNetworkOffline: true,
+    trackLongInactivity: true,
+    requireFullscreen: true,
+    requireCamera: true,
+    requireMicrophone: true,
+    requireScreenShare: true,
+    blockMultiMonitor: true,
+    captureEvidence: true,
+    inactivityThresholdSeconds: 180,
+    offscreenLongThresholdSeconds: 30,
+    repeatEventWindowMinutes: 10,
+    repeatEventThreshold: 3
+  },
+  STRICT: {
+    level: 'STRICT',
+    trackWindowBlur: true,
+    trackPageHidden: true,
+    trackNavigationLeave: true,
+    trackFullscreenExit: true,
+    trackCopyPaste: true,
+    trackContextMenu: true,
+    trackNetworkOffline: true,
+    trackLongInactivity: true,
+    requireFullscreen: true,
+    requireCamera: true,
+    requireMicrophone: true,
+    requireScreenShare: true,
+    blockMultiMonitor: true,
+    captureEvidence: true,
+    inactivityThresholdSeconds: 90,
+    offscreenLongThresholdSeconds: 15,
+    repeatEventWindowMinutes: 10,
+    repeatEventThreshold: 2
+  }
+}
+
+const clonePolicy = (level) => ({ ...POLICY_PRESETS[level || 'STANDARD'] })
 
 const form = reactive({
   name: 'Java阶段测验',
@@ -152,7 +282,9 @@ const form = reactive({
   endTime: addMinutesToDateTime(defaultStartTime, 60),
   durationMinutes: 60,
   passScore: 60,
-  targetClassIds: []
+  targetClassIds: [],
+  proctoringLevel: 'STANDARD',
+  proctoringPolicy: clonePolicy('STANDARD')
 })
 
 const exams = ref([])
@@ -162,6 +294,21 @@ const teachingClassOptions = ref([])
 const paperLabel = (paper) => `${paper.id} - ${paper.name}`
 const teachingClassLabel = (item) => `${item.id} - ${item.name || ''} (${item.subjectName || '未知课程'})`
 const canOpenProctoring = (status) => ['PUBLISHED', 'ONGOING'].includes(status)
+const applyPolicyPreset = (level) => {
+  if (level === 'CUSTOM') {
+    form.proctoringPolicy.level = 'CUSTOM'
+    return
+  }
+  Object.assign(form.proctoringPolicy, clonePolicy(level))
+}
+const policyLevelLabel = (level) => {
+  switch (level) {
+    case 'LOW': return '宽松'
+    case 'STRICT': return '严格'
+    case 'CUSTOM': return '自定义'
+    default: return '标准'
+  }
+}
 
 const syncExamTimeRange = () => {
   const normalizedStart = normalizeDateTimeToMinute(form.startTime)
@@ -223,7 +370,13 @@ const createExam = async () => {
     ElMessage.warning('请选择目标教学班')
     return
   }
-  const payload = { ...form }
+  const payload = {
+    ...form,
+    proctoringPolicy: {
+      ...form.proctoringPolicy,
+      level: form.proctoringLevel
+    }
+  }
   const id = await createExamApi(payload)
   ElMessage.success(`考试创建成功: ${id}`)
   await loadExams()
@@ -282,6 +435,28 @@ onMounted(async () => {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.policy-editor {
+  width: 100%;
+  display: grid;
+  gap: 14px;
+}
+
+.policy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 14px;
+}
+
+.policy-numbers :deep(.el-col) {
+  display: grid;
+  gap: 6px;
+}
+
+.policy-numbers span {
+  color: #64748b;
+  font-size: 12px;
 }
 
 .page-card {

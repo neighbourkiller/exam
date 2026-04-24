@@ -400,6 +400,7 @@ const EVENT_TYPE_MAP = {
   CUT_ATTEMPT: '剪切操作',
   CONTEXT_MENU: '右键菜单',
   NETWORK_OFFLINE: '网络离线',
+  LONG_INACTIVITY: '长时间无操作',
   CAMERA_START_FAILED: '摄像头启动失败',
   CAMERA_STREAM_ENDED: '摄像头画面中断',
   CAMERA_TRACK_MUTED: '摄像头画面暂停',

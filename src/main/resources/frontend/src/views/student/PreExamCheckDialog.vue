@@ -48,6 +48,10 @@ const props = defineProps({
   exam: {
     type: Object,
     default: null
+  },
+  policy: {
+    type: Object,
+    default: () => ({})
   }
 })
 
@@ -100,7 +104,7 @@ const runChecks = async () => {
   results.value = []
 
   try {
-    const nextResults = await runPreExamCheck({ retainScreenShare: true })
+    const nextResults = await runPreExamCheck({ retainScreenShare: true, policy: props.policy })
     if (currentSeq !== runSeq) {
       return
     }

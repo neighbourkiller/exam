@@ -3,6 +3,7 @@ package com.ekusys.exam.exam.service;
 import com.ekusys.exam.common.enums.ExamStatus;
 import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.exam.dto.ExamCreateRequest;
+import com.ekusys.exam.exam.dto.ProctoringPolicyView;
 import com.ekusys.exam.repository.entity.Exam;
 import com.ekusys.exam.repository.entity.ExamTargetClass;
 import com.ekusys.exam.repository.entity.Paper;
@@ -34,17 +35,20 @@ public class ExamLifecycleService {
     private final ExamTargetClassMapper examTargetClassMapper;
     private final TeachingClassMapper teachingClassMapper;
     private final ExamAccessService examAccessService;
+    private final ExamProctoringPolicyService proctoringPolicyService;
 
     public ExamLifecycleService(PaperMapper paperMapper,
                                 ExamMapper examMapper,
                                 ExamTargetClassMapper examTargetClassMapper,
                                 TeachingClassMapper teachingClassMapper,
-                                ExamAccessService examAccessService) {
+                                ExamAccessService examAccessService,
+                                ExamProctoringPolicyService proctoringPolicyService) {
         this.paperMapper = paperMapper;
         this.examMapper = examMapper;
         this.examTargetClassMapper = examTargetClassMapper;
         this.teachingClassMapper = teachingClassMapper;
         this.examAccessService = examAccessService;
+        this.proctoringPolicyService = proctoringPolicyService;
     }
 
     @Transactional
@@ -91,6 +95,10 @@ public class ExamLifecycleService {
         }
 
         Exam exam = new Exam();
+        ProctoringPolicyView proctoringPolicy = proctoringPolicyService.normalizeForCreate(
+            request.getProctoringLevel(),
+            request.getProctoringPolicy()
+        );
         exam.setName(request.getName());
         exam.setPaperId(request.getPaperId());
         exam.setStartTime(request.getStartTime());
@@ -99,6 +107,8 @@ public class ExamLifecycleService {
         exam.setPassScore(request.getPassScore());
         exam.setStatus(ExamStatus.DRAFT.name());
         exam.setPublisherId(publisherId);
+        exam.setProctoringLevel(proctoringPolicy.getLevel());
+        exam.setProctoringConfigJson(proctoringPolicyService.toJson(proctoringPolicy));
         examMapper.insert(exam);
 
         for (Long classId : targetClassIds) {

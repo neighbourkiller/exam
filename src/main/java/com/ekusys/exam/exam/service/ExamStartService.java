@@ -22,17 +22,20 @@ public class ExamStartService {
     private final ExamSessionService examSessionService;
     private final ExamQuestionAssembler examQuestionAssembler;
     private final ExamSnapshotService examSnapshotService;
+    private final ExamProctoringPolicyService proctoringPolicyService;
 
     public ExamStartService(ExamAccessService examAccessService,
                             ExamStatusService examStatusService,
                             ExamSessionService examSessionService,
                             ExamQuestionAssembler examQuestionAssembler,
-                            ExamSnapshotService examSnapshotService) {
+                            ExamSnapshotService examSnapshotService,
+                            ExamProctoringPolicyService proctoringPolicyService) {
         this.examAccessService = examAccessService;
         this.examStatusService = examStatusService;
         this.examSessionService = examSessionService;
         this.examQuestionAssembler = examQuestionAssembler;
         this.examSnapshotService = examSnapshotService;
+        this.proctoringPolicyService = proctoringPolicyService;
     }
 
     @Transactional
@@ -74,6 +77,7 @@ public class ExamStartService {
             .endTime(exam.getEndTime())
             .deadlineTime(session.getDeadlineTime())
             .draftUpdatedAt(examSnapshotService.resolveDraftUpdatedAt(examId, studentId))
+            .proctoringPolicy(proctoringPolicyService.resolve(exam.getProctoringLevel(), exam.getProctoringConfigJson()))
             .questions(examQuestionAssembler.assembleQuestions(exam.getPaperId(), examId, studentId))
             .build();
     }

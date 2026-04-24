@@ -32,6 +32,7 @@ public class ExamTeacherQueryService {
     private final ExamAccessService examAccessService;
     private final ExamStatusService examStatusService;
     private final ExamPermissionService examPermissionService;
+    private final ExamProctoringPolicyService proctoringPolicyService;
 
     public ExamTeacherQueryService(ExamMapper examMapper,
                                    TeachingClassMapper teachingClassMapper,
@@ -39,7 +40,8 @@ public class ExamTeacherQueryService {
                                    UserMapper userMapper,
                                    ExamAccessService examAccessService,
                                    ExamStatusService examStatusService,
-                                   ExamPermissionService examPermissionService) {
+                                   ExamPermissionService examPermissionService,
+                                   ExamProctoringPolicyService proctoringPolicyService) {
         this.examMapper = examMapper;
         this.teachingClassMapper = teachingClassMapper;
         this.subjectMapper = subjectMapper;
@@ -47,6 +49,7 @@ public class ExamTeacherQueryService {
         this.examAccessService = examAccessService;
         this.examStatusService = examStatusService;
         this.examPermissionService = examPermissionService;
+        this.proctoringPolicyService = proctoringPolicyService;
     }
 
     public List<TeacherExamView> listTeacherExams() {
@@ -54,15 +57,20 @@ public class ExamTeacherQueryService {
         exams = examPermissionService.filterManageableExams(exams);
         LocalDateTime now = LocalDateTime.now();
         exams.forEach(item -> examStatusService.refreshExamStatusByTime(item, now));
-        return exams.stream().map(exam -> TeacherExamView.builder()
-            .examId(exam.getId())
-            .name(exam.getName())
-            .startTime(exam.getStartTime())
-            .endTime(exam.getEndTime())
-            .durationMinutes(exam.getDurationMinutes())
-            .passScore(exam.getPassScore())
-            .status(exam.getStatus())
-            .build()).toList();
+        return exams.stream().map(exam -> {
+            var proctoringPolicy = proctoringPolicyService.resolve(exam.getProctoringLevel(), exam.getProctoringConfigJson());
+            return TeacherExamView.builder()
+                .examId(exam.getId())
+                .name(exam.getName())
+                .startTime(exam.getStartTime())
+                .endTime(exam.getEndTime())
+                .durationMinutes(exam.getDurationMinutes())
+                .passScore(exam.getPassScore())
+                .status(exam.getStatus())
+                .proctoringLevel(proctoringPolicy.getLevel())
+                .proctoringPolicy(proctoringPolicy)
+                .build();
+        }).toList();
     }
 
     public List<TeachingClassOptionView> listTeachingClasses() {

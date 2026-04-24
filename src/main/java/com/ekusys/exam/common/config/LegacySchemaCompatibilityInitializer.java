@@ -22,6 +22,7 @@ public class LegacySchemaCompatibilityInitializer {
         warnIfFlywayHistoryMissing();
         ensureExamSessionDeadlineColumn();
         ensureExamSessionDeadlineIndex();
+        ensureExamProctoringPolicyColumns();
         ensureAntiCheatIndexes();
     }
 
@@ -61,6 +62,19 @@ public class LegacySchemaCompatibilityInitializer {
         );
     }
 
+    private void ensureExamProctoringPolicyColumns() {
+        ensureColumn(
+            "exam",
+            "proctoring_level",
+            "ALTER TABLE exam ADD COLUMN proctoring_level VARCHAR(32) NOT NULL DEFAULT 'STANDARD' AFTER publisher_id"
+        );
+        ensureColumn(
+            "exam",
+            "proctoring_config_json",
+            "ALTER TABLE exam ADD COLUMN proctoring_config_json TEXT NULL AFTER proctoring_level"
+        );
+    }
+
     private void ensureAntiCheatIndexes() {
         ensureIndex(
             "anti_cheat_event",
@@ -87,5 +101,20 @@ public class LegacySchemaCompatibilityInitializer {
         }
         jdbcTemplate.execute(ddl);
         log.warn("Legacy schema repaired: added {}.{}", tableName, indexName);
+    }
+
+    private void ensureColumn(String tableName, String columnName, String ddl) {
+        Integer count = jdbcTemplate.queryForObject("""
+            SELECT COUNT(*)
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = ?
+              AND COLUMN_NAME = ?
+            """, Integer.class, tableName, columnName);
+        if (count != null && count > 0) {
+            return;
+        }
+        jdbcTemplate.execute(ddl);
+        log.warn("Legacy schema repaired: added {}.{}", tableName, columnName);
     }
 }

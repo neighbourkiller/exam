@@ -15,6 +15,7 @@ import com.ekusys.exam.exam.service.ExamAccessService;
 import com.ekusys.exam.exam.service.ExamAntiCheatWriteService;
 import com.ekusys.exam.exam.service.ExamAutoSubmitService;
 import com.ekusys.exam.exam.service.ExamPermissionService;
+import com.ekusys.exam.exam.service.ExamProctoringPolicyService;
 import com.ekusys.exam.exam.service.ExamQuestionAssembler;
 import com.ekusys.exam.exam.service.ExamSessionService;
 import com.ekusys.exam.exam.service.ExamService;
@@ -113,6 +114,7 @@ class ExamServiceTest {
     @BeforeEach
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper();
+        ExamProctoringPolicyService proctoringPolicyService = new ExamProctoringPolicyService(objectMapper);
         ExamAccessService accessService = new ExamAccessService(
             examMapper,
             examTargetClassMapper,
@@ -144,7 +146,8 @@ class ExamServiceTest {
                 examMapper,
                 examTargetClassMapper,
                 teachingClassMapper,
-                accessService
+                accessService,
+                proctoringPolicyService
             ),
             new ExamTeacherQueryService(
                 examMapper,
@@ -153,7 +156,8 @@ class ExamServiceTest {
                 userMapper,
                 accessService,
                 statusService,
-                new ExamPermissionService(userMapper, examTargetClassMapper, teachingClassMapper)
+                new ExamPermissionService(userMapper, examTargetClassMapper, teachingClassMapper),
+                proctoringPolicyService
             ),
             new ExamStudentQueryService(
                 examMapper,
@@ -162,17 +166,19 @@ class ExamServiceTest {
                 paperMapper,
                 subjectMapper,
                 accessService,
-                statusService
+                statusService,
+                proctoringPolicyService
             ),
             new ExamStartService(
                 accessService,
                 statusService,
                 sessionService,
                 questionAssembler,
-                snapshotService
+                snapshotService,
+                proctoringPolicyService
             ),
             snapshotService,
-            new ExamAntiCheatWriteService(accessService, antiCheatEventMapper),
+            new ExamAntiCheatWriteService(accessService, antiCheatEventMapper, proctoringPolicyService),
             org.mockito.Mockito.mock(ExamSubmissionService.class),
             org.mockito.Mockito.mock(ExamAutoSubmitService.class)
         );

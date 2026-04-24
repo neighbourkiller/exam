@@ -173,6 +173,8 @@ CREATE TABLE IF NOT EXISTS exam (
     pass_score INT NOT NULL,
     status VARCHAR(16) NOT NULL,
     publisher_id BIGINT,
+    proctoring_level VARCHAR(32) NOT NULL DEFAULT 'STANDARD',
+    proctoring_config_json TEXT,
     create_time DATETIME,
     update_time DATETIME,
     create_by BIGINT,

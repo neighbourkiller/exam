@@ -10,8 +10,10 @@ import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.exam.dto.TeacherExamView;
 import com.ekusys.exam.exam.service.ExamAccessService;
 import com.ekusys.exam.exam.service.ExamPermissionService;
+import com.ekusys.exam.exam.service.ExamProctoringPolicyService;
 import com.ekusys.exam.exam.service.ExamStatusService;
 import com.ekusys.exam.exam.service.ExamTeacherQueryService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ekusys.exam.repository.entity.Exam;
 import com.ekusys.exam.repository.entity.ExamTargetClass;
 import com.ekusys.exam.repository.entity.TeachingClass;
@@ -73,7 +75,8 @@ class ExamTeacherQueryServiceTest {
             userMapper,
             examAccessService,
             new ExamStatusService(examMapper),
-            examPermissionService
+            examPermissionService,
+            new ExamProctoringPolicyService(new ObjectMapper())
         );
     }
 

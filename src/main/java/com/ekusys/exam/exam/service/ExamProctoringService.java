@@ -9,6 +9,7 @@ import com.ekusys.exam.exam.dto.ProctoringDispositionRequest;
 import com.ekusys.exam.exam.dto.ProctoringDispositionView;
 import com.ekusys.exam.exam.dto.ProctoringEventStatView;
 import com.ekusys.exam.exam.dto.ProctoringOverviewView;
+import com.ekusys.exam.exam.dto.ProctoringPolicyView;
 import com.ekusys.exam.exam.dto.ProctoringRecentEventView;
 import com.ekusys.exam.exam.dto.ProctoringStudentTimelineView;
 import com.ekusys.exam.exam.dto.ProctoringStudentView;
@@ -64,6 +65,7 @@ public class ExamProctoringService {
     private static final String EVENT_CUT_ATTEMPT = "CUT_ATTEMPT";
     private static final String EVENT_CONTEXT_MENU = "CONTEXT_MENU";
     private static final String EVENT_NETWORK_OFFLINE = "NETWORK_OFFLINE";
+    private static final String EVENT_LONG_INACTIVITY = "LONG_INACTIVITY";
     private static final String EVENT_CAMERA_START_FAILED = "CAMERA_START_FAILED";
     private static final String EVENT_CAMERA_STREAM_ENDED = "CAMERA_STREAM_ENDED";
     private static final String EVENT_CAMERA_TRACK_MUTED = "CAMERA_TRACK_MUTED";
@@ -96,6 +98,7 @@ public class ExamProctoringService {
     private final AntiCheatEventMapper antiCheatEventMapper;
     private final ProctoringDispositionMapper proctoringDispositionMapper;
     private final ExamPermissionService examPermissionService;
+    private final ExamProctoringPolicyService proctoringPolicyService;
 
     public ExamProctoringService(ExamMapper examMapper,
                                  ExamTargetClassMapper examTargetClassMapper,
@@ -106,7 +109,8 @@ public class ExamProctoringService {
                                  SubmissionMapper submissionMapper,
                                  AntiCheatEventMapper antiCheatEventMapper,
                                  ProctoringDispositionMapper proctoringDispositionMapper,
-                                 ExamPermissionService examPermissionService) {
+                                 ExamPermissionService examPermissionService,
+                                 ExamProctoringPolicyService proctoringPolicyService) {
         this.examMapper = examMapper;
         this.examTargetClassMapper = examTargetClassMapper;
         this.studentTeachingClassMapper = studentTeachingClassMapper;
@@ -117,6 +121,7 @@ public class ExamProctoringService {
         this.antiCheatEventMapper = antiCheatEventMapper;
         this.proctoringDispositionMapper = proctoringDispositionMapper;
         this.examPermissionService = examPermissionService;
+        this.proctoringPolicyService = proctoringPolicyService;
     }
 
     public ProctoringOverviewView getOverview(Long examId) {
@@ -413,6 +418,7 @@ public class ExamProctoringService {
                 .collect(Collectors.toMap(User::getId, user -> user, (a, b) -> a));
 
         LocalDateTime now = LocalDateTime.now();
+        ProctoringPolicyView policy = proctoringPolicyService.resolve(exam.getProctoringLevel(), exam.getProctoringConfigJson());
         Map<Long, StudentRiskSnapshot> studentSnapshots = new LinkedHashMap<>();
         for (Long studentId : studentIds) {
             User user = userMap.get(studentId);
@@ -420,13 +426,14 @@ public class ExamProctoringService {
             Submission submission = submissionMap.get(studentId);
             List<AntiCheatEvent> events = eventsByStudent.getOrDefault(studentId, List.of());
             ProctoringDispositionView disposition = toDispositionView(dispositionMap.get(studentId), handlerMap);
-            studentSnapshots.put(studentId, buildStudentSnapshot(exam, studentId, user, classNamesByStudent.getOrDefault(studentId, List.of()), session, submission, events, disposition, now));
+            studentSnapshots.put(studentId, buildStudentSnapshot(exam, policy, studentId, user, classNamesByStudent.getOrDefault(studentId, List.of()), session, submission, events, disposition, now));
         }
 
         return new ProctoringContext(exam, studentSnapshots, eventsByStudent);
     }
 
     private StudentRiskSnapshot buildStudentSnapshot(Exam exam,
+                                                     ProctoringPolicyView policy,
                                                      Long studentId,
                                                      User user,
                                                      List<String> classNames,
@@ -444,11 +451,11 @@ public class ExamProctoringService {
         String latestEventType = null;
 
         for (AntiCheatEvent event : events) {
-            riskScore += riskScoreOfEvent(event);
+            riskScore += riskScoreOfEvent(event, policy);
             if (EVENT_WINDOW_BLUR.equals(event.getEventType()) || EVENT_TAB_HIDDEN.equals(event.getEventType())) {
                 long duration = safeDuration(event.getDurationMs());
                 totalOffscreenDurationMs += duration;
-                if (duration > 30_000L) {
+                if (duration > offscreenLongThresholdMs(policy)) {
                     longOffscreen = true;
                 }
             }
@@ -461,16 +468,16 @@ public class ExamProctoringService {
                 continue;
             }
             Deque<LocalDateTime> recent = recentEventsByType.computeIfAbsent(event.getEventType(), key -> new ArrayDeque<>());
-            while (!recent.isEmpty() && Duration.between(recent.peekFirst(), event.getEventTime()).toMinutes() >= 10) {
+            while (!recent.isEmpty() && Duration.between(recent.peekFirst(), event.getEventTime()).toMinutes() >= repeatWindowMinutes(policy)) {
                 recent.pollFirst();
             }
             recent.addLast(event.getEventTime());
-            if (recent.size() >= 3 && repeatBonusTypes.add(event.getEventType())) {
+            if (recent.size() >= repeatThreshold(policy) && repeatBonusTypes.add(event.getEventType())) {
                 riskScore += 2;
             }
         }
 
-        if (!longOffscreen && totalOffscreenDurationMs > 30_000L) {
+        if (!longOffscreen && totalOffscreenDurationMs > offscreenLongThresholdMs(policy)) {
             longOffscreen = true;
         }
 
@@ -496,18 +503,19 @@ public class ExamProctoringService {
         );
     }
 
-    private int riskScoreOfEvent(AntiCheatEvent event) {
+    private int riskScoreOfEvent(AntiCheatEvent event, ProctoringPolicyView policy) {
         if (event == null || event.getEventType() == null) {
             return 0;
         }
         long durationMs = safeDuration(event.getDurationMs());
+        long offscreenThresholdMs = offscreenLongThresholdMs(policy);
         return switch (event.getEventType()) {
             case EVENT_WINDOW_BLUR, EVENT_TAB_HIDDEN -> {
                 int score = 2;
                 if (durationMs > 5_000L) {
                     score += 2;
                 }
-                if (durationMs > 30_000L) {
+                if (durationMs > offscreenThresholdMs) {
                     score += 3;
                 }
                 yield score;
@@ -515,6 +523,7 @@ public class ExamProctoringService {
             case EVENT_FULLSCREEN_EXIT -> 3;
             case EVENT_COPY_ATTEMPT, EVENT_PASTE_ATTEMPT, EVENT_CUT_ATTEMPT, EVENT_CONTEXT_MENU -> 2;
             case EVENT_NETWORK_OFFLINE -> durationMs > 10_000L ? 2 : 0;
+            case EVENT_LONG_INACTIVITY -> durationMs > inactivityThresholdMs(policy) * 2 ? 6 : 4;
             case EVENT_CAMERA_START_FAILED, EVENT_CAMERA_STREAM_ENDED, EVENT_MULTI_MONITOR_DETECTED,
                  EVENT_SCREEN_CHECK_UNAVAILABLE, EVENT_SCREEN_SHARE_START_FAILED, EVENT_SCREEN_SHARE_ENDED,
                  EVENT_NAVIGATION_LEAVE_ATTEMPT -> 8;
@@ -746,6 +755,32 @@ public class ExamProctoringService {
 
     private long safeDuration(Long durationMs) {
         return durationMs == null || durationMs < 0 ? 0L : durationMs;
+    }
+
+    private long offscreenLongThresholdMs(ProctoringPolicyView policy) {
+        int seconds = policy == null || policy.getOffscreenLongThresholdSeconds() == null
+            ? 30
+            : policy.getOffscreenLongThresholdSeconds();
+        return seconds * 1000L;
+    }
+
+    private long inactivityThresholdMs(ProctoringPolicyView policy) {
+        int seconds = policy == null || policy.getInactivityThresholdSeconds() == null
+            ? 180
+            : policy.getInactivityThresholdSeconds();
+        return seconds * 1000L;
+    }
+
+    private int repeatWindowMinutes(ProctoringPolicyView policy) {
+        return policy == null || policy.getRepeatEventWindowMinutes() == null
+            ? 10
+            : policy.getRepeatEventWindowMinutes();
+    }
+
+    private int repeatThreshold(ProctoringPolicyView policy) {
+        return policy == null || policy.getRepeatEventThreshold() == null
+            ? 3
+            : policy.getRepeatEventThreshold();
     }
 
     private String coalesce(String... values) {

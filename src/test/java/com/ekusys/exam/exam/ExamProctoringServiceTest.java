@@ -20,6 +20,7 @@ import com.ekusys.exam.exam.dto.ProctoringOverviewView;
 import com.ekusys.exam.exam.dto.ProctoringStudentView;
 import com.ekusys.exam.exam.dto.ProctoringStudentTimelineView;
 import com.ekusys.exam.exam.service.ExamPermissionService;
+import com.ekusys.exam.exam.service.ExamProctoringPolicyService;
 import com.ekusys.exam.exam.service.ExamProctoringService;
 import com.ekusys.exam.repository.entity.AntiCheatEvent;
 import com.ekusys.exam.repository.entity.Exam;
@@ -41,6 +42,7 @@ import com.ekusys.exam.repository.mapper.TeachingClassMapper;
 import com.ekusys.exam.repository.mapper.UserMapper;
 import java.time.LocalDateTime;
 import java.util.List;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -94,7 +96,8 @@ class ExamProctoringServiceTest {
             submissionMapper,
             antiCheatEventMapper,
             proctoringDispositionMapper,
-            new ExamPermissionService(userMapper, examTargetClassMapper, teachingClassMapper)
+            new ExamPermissionService(userMapper, examTargetClassMapper, teachingClassMapper),
+            new ExamProctoringPolicyService(new ObjectMapper())
         );
     }
 
@@ -236,6 +239,33 @@ class ExamProctoringServiceTest {
 
             assertEquals("HIGH", timeline.getRiskLevel());
             assertEquals("NAVIGATION_LEAVE_ATTEMPT", timeline.getLatestEventType());
+        }
+    }
+
+    @Test
+    void timelineShouldTreatLongInactivityAsMediumRisk() {
+        Exam exam = buildExam();
+        when(examMapper.selectById(1L)).thenReturn(exam);
+        when(userMapper.selectRoleCodes(200L)).thenReturn(List.of("TEACHER"));
+        when(examTargetClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(buildTargetClass(1L, 11L)));
+        when(teachingClassMapper.selectBatchIds(any())).thenReturn(List.of(buildTeachingClass(11L, "一班")));
+        when(studentTeachingClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(buildEnrollment(1001L, 11L)));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(buildUser(1001L, "alice", "Alice")));
+        when(examSessionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
+            buildSession(1001L, SessionStatus.ANSWERING.name(), LocalDateTime.now().minusMinutes(5), null, LocalDateTime.now())
+        ));
+        when(submissionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(antiCheatEventMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
+            buildEvent(1L, 1001L, "LONG_INACTIVITY", LocalDateTime.now().minusMinutes(1), 190_000L)
+        ));
+
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+
+            ProctoringStudentTimelineView timeline = examProctoringService.getStudentTimeline(1L, 1001L);
+
+            assertEquals("MEDIUM", timeline.getRiskLevel());
+            assertEquals("LONG_INACTIVITY", timeline.getLatestEventType());
         }
     }
 
