@@ -20,4 +20,6 @@ public class Exam extends BaseEntity {
     private Integer passScore;
     private String status;
     private Long publisherId;
+    private String proctoringLevel;
+    private String proctoringConfigJson;
 }

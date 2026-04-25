@@ -26,6 +26,13 @@ const createResult = ({ key, label, status, detail, blocking = false, latencyMs 
   ...extra
 })
 
+const disabledResult = (key, label) => createResult({
+  key,
+  label,
+  status: 'passed',
+  detail: '当前考试策略未启用该项强制检测。'
+})
+
 const getApiBaseUrl = () =>
   import.meta.env.VITE_API_BASE_URL || 'http://localhost:16730/api/v1'
 
@@ -346,22 +353,30 @@ export const checkScreenDetails = async () => {
   }
 }
 
-export const runPreExamCheck = async ({ retainScreenShare = false } = {}) => {
+export const runPreExamCheck = async ({ retainScreenShare = false, policy = {} } = {}) => {
   releaseMediaStreams()
   const browser = checkBrowserCompatibility()
   const network = await checkNetwork()
-  const screen = await checkScreenDetails()
-  const screenShare = await checkScreenShare({ retain: retainScreenShare })
-  const camera = await checkMediaDevice({
-    key: 'camera',
-    label: '摄像头',
-    constraints: { video: true }
-  })
-  const microphone = await checkMediaDevice({
-    key: 'microphone',
-    label: '麦克风',
-    constraints: { audio: true }
-  })
+  const screen = policy.blockMultiMonitor === false
+    ? disabledResult('screen', '显示器数量')
+    : await checkScreenDetails()
+  const screenShare = policy.requireScreenShare === false
+    ? disabledResult('screenShare', '屏幕共享授权')
+    : await checkScreenShare({ retain: retainScreenShare })
+  const camera = policy.requireCamera === false
+    ? disabledResult('camera', '摄像头')
+    : await checkMediaDevice({
+        key: 'camera',
+        label: '摄像头',
+        constraints: { video: true }
+      })
+  const microphone = policy.requireMicrophone === false
+    ? disabledResult('microphone', '麦克风')
+    : await checkMediaDevice({
+        key: 'microphone',
+        label: '麦克风',
+        constraints: { audio: true }
+      })
   releaseMediaStreams({ includeRetainedScreenShare: !retainScreenShare })
 
   return [browser, network, screen, screenShare, camera, microphone]

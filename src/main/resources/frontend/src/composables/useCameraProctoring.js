@@ -75,6 +75,7 @@ export const useCameraProctoring = ({ reportEvent, uploadEvidence }) => {
   let screenChangeHandler = null
   let stopped = false
   let screenIssueActive = false
+  let activePolicy = {}
 
   const getVideoTrack = () => cameraStream?.getVideoTracks?.()[0] || null
   const getScreenTrack = () => screenStream?.getVideoTracks?.()[0] || null
@@ -128,9 +129,12 @@ export const useCameraProctoring = ({ reportEvent, uploadEvidence }) => {
   }
 
   const report = async (eventType, durationMs = 0, extra = {}, options = {}) => {
+    if (!shouldReportEvent(eventType)) {
+      return
+    }
     state.lastEventAt = Date.now()
     updateState('danger', '监控异常已记录', eventType)
-    const evidenceResult = options.skipEvidence
+    const evidenceResult = options.skipEvidence || activePolicy.captureEvidence === false
       ? { evidence: [], errors: [] }
       : await captureEvidence(eventType)
     await reportEvent(
@@ -144,7 +148,26 @@ export const useCameraProctoring = ({ reportEvent, uploadEvidence }) => {
     )
   }
 
+  const shouldReportEvent = (eventType) => {
+    if (!activePolicy) {
+      return true
+    }
+    if (eventType?.startsWith('CAMERA_')) {
+      return activePolicy.requireCamera !== false
+    }
+    if (eventType?.startsWith('SCREEN_SHARE_')) {
+      return activePolicy.requireScreenShare !== false
+    }
+    if (eventType === 'MULTI_MONITOR_DETECTED' || eventType === 'SCREEN_CHECK_UNAVAILABLE') {
+      return activePolicy.blockMultiMonitor !== false
+    }
+    return true
+  }
+
   const inspectScreens = async () => {
+    if (activePolicy.blockMultiMonitor === false) {
+      return
+    }
     const result = await checkScreenDetails()
     state.screenCount = result.screenCount ?? null
     state.screenCheckSupported = result.screenCount != null
@@ -170,6 +193,9 @@ export const useCameraProctoring = ({ reportEvent, uploadEvidence }) => {
   }
 
   const bindScreenChange = async () => {
+    if (activePolicy.blockMultiMonitor === false) {
+      return
+    }
     if (!window.isSecureContext || typeof window.getScreenDetails !== 'function') {
       return
     }
@@ -188,6 +214,10 @@ export const useCameraProctoring = ({ reportEvent, uploadEvidence }) => {
   }
 
   const startScreenShare = async () => {
+    if (activePolicy.requireScreenShare === false) {
+      state.screenShareActive = false
+      return
+    }
     const retainedStream = consumeRetainedScreenShareStream()
     if (retainedStream?.getVideoTracks?.()[0]?.readyState === 'live') {
       screenStream = retainedStream
@@ -308,11 +338,17 @@ export const useCameraProctoring = ({ reportEvent, uploadEvidence }) => {
     }
   }
 
-  const start = async () => {
+  const start = async (policy = {}) => {
+    activePolicy = policy || {}
     stopped = false
     await startScreenShare()
     await inspectScreens()
     await bindScreenChange()
+
+    if (activePolicy.requireCamera === false) {
+      updateState('success', '监控策略已生效', '本场考试未要求摄像头监控。')
+      return
+    }
 
     if (!navigator.mediaDevices?.getUserMedia) {
       await report('CAMERA_START_FAILED', 0, {

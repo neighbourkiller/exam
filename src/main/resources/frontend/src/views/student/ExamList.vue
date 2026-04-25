@@ -29,6 +29,11 @@
             <el-tag :type="getStatusType(row.status)" effect="light" round>{{ row.status }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="监考策略" width="110">
+          <template #default="{ row }">
+            <el-tag effect="plain" size="small">{{ policyLevelLabel(row.proctoringLevel || row.proctoringPolicy?.level) }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="已提交" width="90">
           <template #default="{ row }">
             <el-tag :type="row.submitted ? 'success' : 'info'" size="small" round>{{ row.submitted ? '是' : '否' }}</el-tag>
@@ -47,6 +52,7 @@
     <PreExamCheckDialog
       v-model="checkVisible"
       :exam="pendingExam"
+      :policy="pendingExam?.proctoringPolicy || {}"
       @passed="enterPendingExam"
     />
   </div>
@@ -110,6 +116,15 @@ const getStatusType = (status) => {
     case 'FINISHED': return 'info'
     case 'TERMINATED': return 'danger'
     default: return 'info'
+  }
+}
+
+const policyLevelLabel = (level) => {
+  switch (level) {
+    case 'LOW': return '宽松'
+    case 'STRICT': return '严格'
+    case 'CUSTOM': return '自定义'
+    default: return '标准'
   }
 }
 

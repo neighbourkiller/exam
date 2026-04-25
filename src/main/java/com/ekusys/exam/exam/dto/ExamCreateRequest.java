@@ -35,4 +35,8 @@ public class ExamCreateRequest {
 
     @NotEmpty
     private List<Long> targetClassIds;
+
+    private String proctoringLevel;
+
+    private ProctoringPolicyView proctoringPolicy;
 }

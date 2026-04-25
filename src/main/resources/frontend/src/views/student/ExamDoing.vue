@@ -205,7 +205,8 @@ const examId = String(route.params.id || '')
 const state = reactive({
   examId,
   examName: '',
-  questions: []
+  questions: [],
+  proctoringPolicy: {}
 })
 const answers = reactive({})
 const markedQuestionIds = ref([])
@@ -216,6 +217,7 @@ const examEndAt = ref(null)
 const blurStartedAt = ref(null)
 const hiddenStartedAt = ref(null)
 const offlineStartedAt = ref(null)
+const lastActivityAt = ref(Date.now())
 const endingExam = ref(false)
 const allowLeaveExam = ref(false)
 const isOnline = ref(navigator.onLine)
@@ -231,14 +233,37 @@ const typeLabelMap = {
   BLANK: '填空题',
   SHORT: '简答题'
 }
+const DEFAULT_PROCTORING_POLICY = {
+  level: 'STANDARD',
+  trackWindowBlur: true,
+  trackPageHidden: true,
+  trackNavigationLeave: true,
+  trackFullscreenExit: true,
+  trackCopyPaste: true,
+  trackContextMenu: true,
+  trackNetworkOffline: true,
+  trackLongInactivity: true,
+  requireFullscreen: true,
+  requireCamera: true,
+  requireMicrophone: true,
+  requireScreenShare: true,
+  blockMultiMonitor: true,
+  captureEvidence: true,
+  inactivityThresholdSeconds: 180,
+  offscreenLongThresholdSeconds: 30,
+  repeatEventWindowMinutes: 10,
+  repeatEventThreshold: 3
+}
 let timer = null
 let snapshotTimer = null
+let inactivityTimer = null
 let bannerResetTimer = null
 let draftSaveTimer = null
 let pendingDraftDirty = false
 let pendingDraftAnswerTimestampUpdate = false
 let navigationLeaveReporting = false
 let lastNavigationLeaveAttemptAt = 0
+let inactivityEventOpen = false
 const recentEventTimes = new Map()
 const cameraProctoring = useCameraProctoring({
   reportEvent: (eventType, durationMs, payload, evidence = []) =>
@@ -397,6 +422,46 @@ const cameraStatus = computed(() => {
     detail: cameraProctoring.state.detail
   }
 })
+
+const normalizePolicy = (policy = {}) => ({
+  ...DEFAULT_PROCTORING_POLICY,
+  ...(policy || {}),
+  inactivityThresholdSeconds: Number(policy?.inactivityThresholdSeconds || DEFAULT_PROCTORING_POLICY.inactivityThresholdSeconds),
+  offscreenLongThresholdSeconds: Number(policy?.offscreenLongThresholdSeconds || DEFAULT_PROCTORING_POLICY.offscreenLongThresholdSeconds),
+  repeatEventWindowMinutes: Number(policy?.repeatEventWindowMinutes || DEFAULT_PROCTORING_POLICY.repeatEventWindowMinutes),
+  repeatEventThreshold: Number(policy?.repeatEventThreshold || DEFAULT_PROCTORING_POLICY.repeatEventThreshold)
+})
+
+const shouldRecordClientEvent = (eventType) => {
+  const policy = state.proctoringPolicy || DEFAULT_PROCTORING_POLICY
+  switch (eventType) {
+    case 'WINDOW_BLUR':
+      return policy.trackWindowBlur !== false
+    case 'TAB_HIDDEN':
+      return policy.trackPageHidden !== false
+    case 'NAVIGATION_LEAVE_ATTEMPT':
+      return policy.trackNavigationLeave !== false
+    case 'FULLSCREEN_EXIT':
+      return policy.trackFullscreenExit !== false
+    case 'COPY_ATTEMPT':
+    case 'PASTE_ATTEMPT':
+    case 'CUT_ATTEMPT':
+      return policy.trackCopyPaste !== false
+    case 'CONTEXT_MENU':
+      return policy.trackContextMenu !== false
+    case 'NETWORK_OFFLINE':
+      return policy.trackNetworkOffline !== false
+    case 'LONG_INACTIVITY':
+      return policy.trackLongInactivity !== false
+    default:
+      return true
+  }
+}
+
+const policyNumber = (key, fallback) => {
+  const value = Number(state.proctoringPolicy?.[key])
+  return Number.isFinite(value) && value > 0 ? value : fallback
+}
 
 const questionAnchorId = (questionId) => `question-${questionId}`
 
@@ -599,7 +664,9 @@ const hasDraftContent = (answerMap = {}) =>
 const resetBanner = () => {
   bannerState.type = 'warning'
   bannerState.title = '考试页面处于监考模式'
-  bannerState.description = '切屏、退出全屏、离线、复制粘贴等异常行为会被记录，但不会阻断你当前答题。'
+  bannerState.description = state.proctoringPolicy?.trackLongInactivity === false
+    ? '本场考试将按老师设置记录异常行为，但不会阻断你当前答题。'
+    : '切屏、离开页面、复制粘贴、长时间无操作等异常行为会被记录，但不会阻断你当前答题。'
 }
 
 const showBanner = (type, title, description, sticky = false) => {
@@ -683,6 +750,8 @@ const warningMessageForEvent = (eventType, durationMs) => {
       return '检测到右键菜单操作，系统已记录。'
     case 'NETWORK_OFFLINE':
       return `网络中断 ${formatDuration(durationMs)}，系统已记录。`
+    case 'LONG_INACTIVITY':
+      return `检测到 ${formatDuration(durationMs)} 未操作考试页面，系统已记录。`
     case 'CAMERA_START_FAILED':
       return '考试摄像头启动失败，系统已记录。'
     case 'CAMERA_STREAM_ENDED':
@@ -716,9 +785,15 @@ const uploadEvidence = async (blob, source, eventType) => {
 }
 
 const reportAntiCheatEvent = async (eventType, durationMs = 0, extraPayload = {}, evidence = null) => {
+  if (!shouldRecordClientEvent(eventType)) {
+    return
+  }
   const eventCount = recordRecentEvent(eventType)
-  const escalated = eventCount >= 3
-    || durationMs > 30_000
+  const repeatThreshold = policyNumber('repeatEventThreshold', DEFAULT_PROCTORING_POLICY.repeatEventThreshold)
+  const offscreenLongMs = policyNumber('offscreenLongThresholdSeconds', DEFAULT_PROCTORING_POLICY.offscreenLongThresholdSeconds) * 1000
+  const inactivityMs = policyNumber('inactivityThresholdSeconds', DEFAULT_PROCTORING_POLICY.inactivityThresholdSeconds) * 1000
+  const escalated = eventCount >= repeatThreshold
+    || durationMs > offscreenLongMs
     || eventType === 'FULLSCREEN_EXIT'
     || eventType === 'CAMERA_START_FAILED'
     || eventType === 'CAMERA_STREAM_ENDED'
@@ -727,9 +802,11 @@ const reportAntiCheatEvent = async (eventType, durationMs = 0, extraPayload = {}
     || eventType === 'SCREEN_SHARE_START_FAILED'
     || eventType === 'SCREEN_SHARE_ENDED'
     || eventType === 'NAVIGATION_LEAVE_ATTEMPT'
+    || eventType === 'LONG_INACTIVITY'
     || (eventType === 'CAMERA_TRACK_MUTED' && eventCount >= 2)
     || eventType === 'CAMERA_FRAME_DARK'
     || (eventType === 'NETWORK_OFFLINE' && durationMs > 10_000)
+    || (eventType === 'LONG_INACTIVITY' && durationMs >= inactivityMs)
   const message = warningMessageForEvent(eventType, durationMs)
   showBanner(
     escalated ? 'error' : 'warning',
@@ -744,7 +821,7 @@ const reportAntiCheatEvent = async (eventType, durationMs = 0, extraPayload = {}
 
   let evidenceList = Array.isArray(evidence) ? evidence : []
   let evidenceUploadError = extraPayload.evidenceUploadError
-  if (escalated && evidence == null) {
+  if (escalated && evidence == null && state.proctoringPolicy?.captureEvidence !== false) {
     try {
       const evidenceResult = await cameraProctoring.captureEvidence(eventType)
       evidenceList = evidenceResult.evidence
@@ -1059,6 +1136,9 @@ const exitFullscreenForExamEnd = async () => {
 }
 
 const tryEnterFullscreen = async () => {
+  if (state.proctoringPolicy?.requireFullscreen === false) {
+    return
+  }
   if (!document.fullscreenEnabled || document.fullscreenElement) {
     return
   }
@@ -1104,6 +1184,9 @@ const onFullscreenChange = () => {
   if (endingExam.value) {
     return
   }
+  if (state.proctoringPolicy?.trackFullscreenExit === false) {
+    return
+  }
   if (!document.fullscreenElement) {
     reportAntiCheatEvent('FULLSCREEN_EXIT', 0, { mode: 'browser-fullscreen' })
   }
@@ -1147,9 +1230,35 @@ const onOnline = () => {
   void syncDirtyDraft({ force: shouldNotify, notify: shouldNotify })
 }
 
+const onActivity = () => {
+  lastActivityAt.value = Date.now()
+  inactivityEventOpen = false
+}
+
+const checkLongInactivity = () => {
+  if (!syncState.initialized || !shouldRecordClientEvent('LONG_INACTIVITY')) {
+    return
+  }
+  const thresholdMs = policyNumber('inactivityThresholdSeconds', DEFAULT_PROCTORING_POLICY.inactivityThresholdSeconds) * 1000
+  const durationMs = Date.now() - lastActivityAt.value
+  if (durationMs < thresholdMs || inactivityEventOpen) {
+    return
+  }
+  inactivityEventOpen = true
+  reportAntiCheatEvent('LONG_INACTIVITY', durationMs, {
+    thresholdSeconds: Math.round(thresholdMs / 1000),
+    lastActivityAt: lastActivityAt.value
+  })
+}
+
 const onBeforeUnload = (event) => {
   flushDraftSave()
   if (!allowLeaveExam.value) {
+    void reportAntiCheatEvent('NAVIGATION_LEAVE_ATTEMPT', 0, {
+      source: 'beforeunload',
+      fromPath: route.fullPath,
+      mode: 'browser-unload'
+    }, [])
     event.preventDefault()
     event.returnValue = ''
     return ''
@@ -1175,6 +1284,8 @@ const bootstrapExam = async () => {
   state.examId = String(data?.examId || examId)
   state.examName = data?.examName || ''
   state.questions = Array.isArray(data?.questions) ? data.questions : []
+  state.proctoringPolicy = normalizePolicy(data?.proctoringPolicy)
+  resetBanner()
 
   syncState.userId = auth.userId == null ? null : String(auth.userId)
   syncState.initialized = false
@@ -1230,12 +1341,19 @@ const bootstrapExam = async () => {
   snapshotTimer = setInterval(() => {
     void syncDirtyDraft()
   }, 15000)
+  lastActivityAt.value = Date.now()
+  inactivityTimer = setInterval(checkLongInactivity, 5000)
   window.addEventListener('blur', onBlur)
   window.addEventListener('focus', onFocus)
   window.addEventListener('offline', onOffline)
   window.addEventListener('online', onOnline)
   window.addEventListener('popstate', onPopState)
   window.addEventListener('beforeunload', onBeforeUnload)
+  window.addEventListener('mousemove', onActivity, { passive: true })
+  window.addEventListener('mousedown', onActivity, { passive: true })
+  window.addEventListener('keydown', onActivity)
+  window.addEventListener('scroll', onActivity, { passive: true })
+  window.addEventListener('touchstart', onActivity, { passive: true })
   document.addEventListener('visibilitychange', onVisibility)
   document.addEventListener('fullscreenchange', onFullscreenChange)
   document.addEventListener('copy', onCopy)
@@ -1249,7 +1367,7 @@ const bootstrapExam = async () => {
     void syncDirtyDraft({ force: true })
   }
   await tryEnterFullscreen()
-  void cameraProctoring.start()
+  void cameraProctoring.start(state.proctoringPolicy)
 }
 
 watch(answers, () => {
@@ -1295,6 +1413,7 @@ onBeforeUnmount(() => {
   void exitFullscreenForExamEnd()
   if (timer) clearInterval(timer)
   if (snapshotTimer) clearInterval(snapshotTimer)
+  if (inactivityTimer) clearInterval(inactivityTimer)
   if (bannerResetTimer) clearTimeout(bannerResetTimer)
   cameraProctoring.stop()
   flushDraftSave()
@@ -1304,6 +1423,11 @@ onBeforeUnmount(() => {
   window.removeEventListener('online', onOnline)
   window.removeEventListener('popstate', onPopState)
   window.removeEventListener('beforeunload', onBeforeUnload)
+  window.removeEventListener('mousemove', onActivity)
+  window.removeEventListener('mousedown', onActivity)
+  window.removeEventListener('keydown', onActivity)
+  window.removeEventListener('scroll', onActivity)
+  window.removeEventListener('touchstart', onActivity)
   document.removeEventListener('visibilitychange', onVisibility)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   document.removeEventListener('copy', onCopy)

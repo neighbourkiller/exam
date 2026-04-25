@@ -17,5 +17,6 @@ public class StartExamResponse {
     private LocalDateTime endTime;
     private LocalDateTime deadlineTime;
     private LocalDateTime draftUpdatedAt;
+    private ProctoringPolicyView proctoringPolicy;
     private List<StudentExamQuestionView> questions;
 }

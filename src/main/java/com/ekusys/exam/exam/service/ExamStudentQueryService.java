@@ -33,6 +33,7 @@ public class ExamStudentQueryService {
     private final SubjectMapper subjectMapper;
     private final ExamAccessService examAccessService;
     private final ExamStatusService examStatusService;
+    private final ExamProctoringPolicyService proctoringPolicyService;
 
     public ExamStudentQueryService(ExamMapper examMapper,
                                    ExamTargetClassMapper examTargetClassMapper,
@@ -40,7 +41,8 @@ public class ExamStudentQueryService {
                                    PaperMapper paperMapper,
                                    SubjectMapper subjectMapper,
                                    ExamAccessService examAccessService,
-                                   ExamStatusService examStatusService) {
+                                   ExamStatusService examStatusService,
+                                   ExamProctoringPolicyService proctoringPolicyService) {
         this.examMapper = examMapper;
         this.examTargetClassMapper = examTargetClassMapper;
         this.submissionMapper = submissionMapper;
@@ -48,6 +50,7 @@ public class ExamStudentQueryService {
         this.subjectMapper = subjectMapper;
         this.examAccessService = examAccessService;
         this.examStatusService = examStatusService;
+        this.proctoringPolicyService = proctoringPolicyService;
     }
 
     public List<StudentExamView> listStudentExams() {
@@ -82,16 +85,21 @@ public class ExamStudentQueryService {
 
         return exams.stream()
             .sorted((a, b) -> b.getStartTime().compareTo(a.getStartTime()))
-            .map(exam -> StudentExamView.builder()
-                .examId(exam.getId())
-                .name(exam.getName())
-                .subjectName(examSubjectNameMap.get(exam.getId()))
-                .startTime(exam.getStartTime())
-                .endTime(exam.getEndTime())
-                .durationMinutes(exam.getDurationMinutes())
-                .status(exam.getStatus())
-                .submitted(submittedIds.contains(exam.getId()))
-                .build())
+            .map(exam -> {
+                var proctoringPolicy = proctoringPolicyService.resolve(exam.getProctoringLevel(), exam.getProctoringConfigJson());
+                return StudentExamView.builder()
+                    .examId(exam.getId())
+                    .name(exam.getName())
+                    .subjectName(examSubjectNameMap.get(exam.getId()))
+                    .startTime(exam.getStartTime())
+                    .endTime(exam.getEndTime())
+                    .durationMinutes(exam.getDurationMinutes())
+                    .status(exam.getStatus())
+                    .submitted(submittedIds.contains(exam.getId()))
+                    .proctoringLevel(proctoringPolicy.getLevel())
+                    .proctoringPolicy(proctoringPolicy)
+                    .build();
+            })
             .toList();
     }
 

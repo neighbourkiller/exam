@@ -15,4 +15,6 @@ public class TeacherExamView {
     private Integer durationMinutes;
     private Integer passScore;
     private String status;
+    private String proctoringLevel;
+    private ProctoringPolicyView proctoringPolicy;
 }
