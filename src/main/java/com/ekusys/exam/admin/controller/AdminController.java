@@ -1,9 +1,16 @@
 package com.ekusys.exam.admin.controller;
 
 import com.ekusys.exam.admin.dto.AssignRolesRequest;
+import com.ekusys.exam.admin.dto.AdminExamMonitorStudentStatusView;
+import com.ekusys.exam.admin.dto.AdminExamMonitorSummaryView;
+import com.ekusys.exam.admin.dto.BulkExamOperationRequest;
+import com.ekusys.exam.admin.dto.BulkImportResultView;
+import com.ekusys.exam.admin.dto.BulkTeachingClassOperationRequest;
+import com.ekusys.exam.admin.dto.BulkUserOperationRequest;
 import com.ekusys.exam.admin.dto.CourseCreateRequest;
 import com.ekusys.exam.admin.dto.CourseUpdateRequest;
 import com.ekusys.exam.admin.dto.CourseView;
+import com.ekusys.exam.admin.dto.OperationAuditLogView;
 import com.ekusys.exam.admin.dto.ResetPasswordRequest;
 import com.ekusys.exam.admin.dto.RoleCreateRequest;
 import com.ekusys.exam.admin.dto.RoleView;
@@ -14,12 +21,18 @@ import com.ekusys.exam.admin.dto.UserCreateRequest;
 import com.ekusys.exam.admin.dto.UserQueryRequest;
 import com.ekusys.exam.admin.dto.UserUpdateRequest;
 import com.ekusys.exam.admin.dto.UserView;
+import com.ekusys.exam.admin.service.AdminBulkService;
+import com.ekusys.exam.admin.service.AdminExamMonitorService;
 import com.ekusys.exam.admin.service.AdminService;
+import com.ekusys.exam.admin.service.OperationAuditLogQueryService;
 import com.ekusys.exam.common.audit.AuditOperation;
 import com.ekusys.exam.common.api.ApiResponse;
 import com.ekusys.exam.common.api.PageResponse;
 import jakarta.validation.Valid;
+import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,7 +41,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/v1/admin")
@@ -36,9 +51,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminController {
 
     private final AdminService adminService;
+    private final AdminBulkService adminBulkService;
+    private final AdminExamMonitorService adminExamMonitorService;
+    private final OperationAuditLogQueryService operationAuditLogQueryService;
 
-    public AdminController(AdminService adminService) {
+    public AdminController(AdminService adminService,
+                           AdminBulkService adminBulkService,
+                           AdminExamMonitorService adminExamMonitorService,
+                           OperationAuditLogQueryService operationAuditLogQueryService) {
         this.adminService = adminService;
+        this.adminBulkService = adminBulkService;
+        this.adminExamMonitorService = adminExamMonitorService;
+        this.operationAuditLogQueryService = operationAuditLogQueryService;
     }
 
     @PostMapping("/users/query")
@@ -126,5 +150,79 @@ public class AdminController {
                                                  @Valid @RequestBody TeachingClassUpdateRequest request) {
         adminService.updateTeachingClass(id, request);
         return ApiResponse.ok("更新成功", null);
+    }
+
+    @PostMapping(value = "/users/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @AuditOperation(action = "BULK_USER_IMPORT", targetType = "USER", targetId = "'bulk'", detail = "#role + ',dryRun=' + #dryRun")
+    public ApiResponse<BulkImportResultView> importUsers(@RequestParam("file") MultipartFile file,
+                                                         @RequestParam("role") String role,
+                                                         @RequestParam(value = "dryRun", defaultValue = "true") boolean dryRun) {
+        return ApiResponse.ok("导入处理完成", adminBulkService.importUsers(file, role, dryRun));
+    }
+
+    @PostMapping(value = "/teaching-classes/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @AuditOperation(action = "BULK_TEACHING_CLASS_IMPORT", targetType = "TEACHING_CLASS", targetId = "'bulk'",
+        detail = "'dryRun=' + #dryRun")
+    public ApiResponse<BulkImportResultView> importTeachingClasses(@RequestParam("file") MultipartFile file,
+                                                                   @RequestParam(value = "dryRun", defaultValue = "true") boolean dryRun) {
+        return ApiResponse.ok("导入处理完成", adminBulkService.importTeachingClasses(file, dryRun));
+    }
+
+    @PostMapping(value = "/exam-schedules/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @AuditOperation(action = "BULK_EXAM_SCHEDULE_IMPORT", targetType = "EXAM", targetId = "'bulk'",
+        detail = "'dryRun=' + #dryRun")
+    public ApiResponse<BulkImportResultView> importExamSchedules(@RequestParam("file") MultipartFile file,
+                                                                 @RequestParam(value = "dryRun", defaultValue = "true") boolean dryRun) {
+        return ApiResponse.ok("导入处理完成", adminBulkService.importExamSchedules(file, dryRun));
+    }
+
+    @PostMapping("/users/batch")
+    @AuditOperation(action = "BULK_USER_OPERATION", targetType = "USER", targetId = "'bulk'", detail = "#request.action")
+    public ApiResponse<Void> operateUsers(@Valid @RequestBody BulkUserOperationRequest request) {
+        adminBulkService.operateUsers(request);
+        return ApiResponse.ok("批量操作成功", null);
+    }
+
+    @PostMapping("/teaching-classes/batch")
+    @AuditOperation(action = "BULK_TEACHING_CLASS_OPERATION", targetType = "TEACHING_CLASS", targetId = "'bulk'",
+        detail = "#request.status")
+    public ApiResponse<Void> operateTeachingClasses(@Valid @RequestBody BulkTeachingClassOperationRequest request) {
+        adminBulkService.operateTeachingClasses(request);
+        return ApiResponse.ok("批量操作成功", null);
+    }
+
+    @PostMapping("/exams/batch")
+    @AuditOperation(action = "BULK_EXAM_OPERATION", targetType = "EXAM", targetId = "'bulk'", detail = "#request.action")
+    public ApiResponse<Void> operateExams(@Valid @RequestBody BulkExamOperationRequest request) {
+        adminBulkService.operateExams(request);
+        return ApiResponse.ok("批量操作成功", null);
+    }
+
+    @GetMapping("/exam-monitor/summary")
+    public ApiResponse<AdminExamMonitorSummaryView> examMonitorSummary(
+        @RequestParam(value = "startTime", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+        @RequestParam(value = "endTime", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
+        return ApiResponse.ok(adminExamMonitorService.summary(startTime, endTime));
+    }
+
+    @GetMapping("/exam-monitor/exams/{examId}/students")
+    public ApiResponse<List<AdminExamMonitorStudentStatusView>> examMonitorStudents(@PathVariable Long examId) {
+        return ApiResponse.ok(adminExamMonitorService.students(examId));
+    }
+
+    @GetMapping("/audit-logs")
+    public ApiResponse<PageResponse<OperationAuditLogView>> auditLogs(
+        @RequestParam(value = "pageNum", defaultValue = "1") long pageNum,
+        @RequestParam(value = "pageSize", defaultValue = "20") long pageSize,
+        @RequestParam(value = "operatorKeyword", required = false) String operatorKeyword,
+        @RequestParam(value = "action", required = false) String action,
+        @RequestParam(value = "targetType", required = false) String targetType,
+        @RequestParam(value = "targetId", required = false) String targetId,
+        @RequestParam(value = "status", required = false) String status,
+        @RequestParam(value = "startTime", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+        @RequestParam(value = "endTime", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
+        return ApiResponse.ok(operationAuditLogQueryService.query(
+            pageNum, pageSize, operatorKeyword, action, targetType, targetId, status, startTime, endTime
+        ));
     }
 }

@@ -17,6 +17,10 @@ const StudentResults = () => import('../views/student/StudentResults.vue')
 const StudentEnvironmentCheck = () => import('../views/student/EnvironmentCheck.vue')
 const AdminUser = () => import('../views/admin/UserManage.vue')
 const AdminCourse = () => import('../views/admin/CourseManage.vue')
+const AdminTeachingClass = () => import('../views/admin/TeachingClassManage.vue')
+const AdminBulkImport = () => import('../views/admin/BulkImport.vue')
+const AdminExamMonitor = () => import('../views/admin/ExamMonitor.vue')
+const AdminAuditLogs = () => import('../views/admin/OperationAuditLogs.vue')
 
 const routes = [
   { path: '/login', component: LoginView },
@@ -38,7 +42,11 @@ const routes = [
       { path: 'student/exam/:id', component: StudentExamDoing, meta: { roles: ['STUDENT'], examFullscreen: true } },
       { path: 'student/result', redirect: '/student/results', meta: { roles: ['STUDENT'] } },
       { path: 'admin/users', component: AdminUser, meta: { roles: ['ADMIN'] } },
-      { path: 'admin/courses', component: AdminCourse, meta: { roles: ['ADMIN'] } }
+      { path: 'admin/courses', component: AdminCourse, meta: { roles: ['ADMIN'] } },
+      { path: 'admin/teaching-classes', component: AdminTeachingClass, meta: { roles: ['ADMIN'] } },
+      { path: 'admin/bulk-import', component: AdminBulkImport, meta: { roles: ['ADMIN'] } },
+      { path: 'admin/exam-monitor', component: AdminExamMonitor, meta: { roles: ['ADMIN'] } },
+      { path: 'admin/audit-logs', component: AdminAuditLogs, meta: { roles: ['ADMIN'] } }
     ]
   }
 ]

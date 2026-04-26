@@ -7,7 +7,17 @@
       <el-form-item><el-button type="primary" @click="load">查询</el-button></el-form-item>
     </el-form>
 
-    <el-table :data="users">
+    <div class="batch-toolbar">
+      <el-button size="small" :disabled="!selectedRows.length" @click="batchUser('ENABLE')">批量启用</el-button>
+      <el-button size="small" :disabled="!selectedRows.length" @click="batchUser('DISABLE')">批量禁用</el-button>
+      <el-select v-model="batchRoleIds" multiple clearable placeholder="批量分配角色" class="batch-select">
+        <el-option v-for="role in roleOptions" :key="role.id" :label="`${role.name}(${role.code})`" :value="role.id" />
+      </el-select>
+      <el-button size="small" :disabled="!selectedRows.length || !batchRoleIds.length" @click="batchAssignRoles">应用角色</el-button>
+    </div>
+
+    <el-table :data="users" @selection-change="selectedRows = $event">
+      <el-table-column type="selection" width="48" />
       <el-table-column prop="id" label="ID" width="120" />
       <el-table-column prop="username" label="用户名" width="130" />
       <el-table-column prop="realName" label="姓名" width="130" />
@@ -118,6 +128,7 @@
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  batchUsersApi,
   createRoleApi,
   listTeachingClassesApi,
   createUserApi,
@@ -132,6 +143,8 @@ const query = reactive({ pageNum: 1, pageSize: 20, keyword: '' })
 const users = ref([])
 const roleOptions = ref([])
 const teachingClassOptions = ref([])
+const selectedRows = ref([])
+const batchRoleIds = ref([])
 const editDialogVisible = ref(false)
 const editForm = reactive({
   id: null,
@@ -275,6 +288,26 @@ const reset = async (row) => {
   ElMessage.success(`已更新 ${row.username} 的密码`)
 }
 
+const batchUser = async (action) => {
+  await batchUsersApi({
+    userIds: selectedRows.value.map((item) => item.id),
+    action
+  })
+  ElMessage.success('批量操作成功')
+  await load()
+}
+
+const batchAssignRoles = async () => {
+  await batchUsersApi({
+    userIds: selectedRows.value.map((item) => item.id),
+    action: 'ASSIGN_ROLES',
+    roleIds: batchRoleIds.value
+  })
+  ElMessage.success('角色分配成功')
+  batchRoleIds.value = []
+  await load()
+}
+
 const createRole = async () => {
   await createRoleApi(roleForm)
   ElMessage.success('角色创建成功')
@@ -351,6 +384,17 @@ onMounted(async () => {
 
 :deep(.el-dialog) {
   border-radius: 16px;
+}
+
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.batch-select {
+  width: 240px;
 }
 
 </style>

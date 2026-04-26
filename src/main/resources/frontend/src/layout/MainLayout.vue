@@ -38,6 +38,10 @@
             <template #title>系统管理</template>
             <el-menu-item index="/admin/users">用户管理</el-menu-item>
             <el-menu-item index="/admin/courses">课程管理</el-menu-item>
+            <el-menu-item index="/admin/teaching-classes">教学班管理</el-menu-item>
+            <el-menu-item index="/admin/bulk-import">批量导入</el-menu-item>
+            <el-menu-item index="/admin/exam-monitor">考试监控</el-menu-item>
+            <el-menu-item index="/admin/audit-logs">操作日志</el-menu-item>
           </el-sub-menu>
         </el-menu>
 

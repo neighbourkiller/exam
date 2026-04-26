@@ -141,6 +141,25 @@ public class UserProfileSyncService {
     }
 
     @Transactional
+    public void syncTeacherProfile(Long userId, String teacherNo, String title) {
+        TeacherProfile profile = teacherProfileMapper.selectOne(
+            new LambdaQueryWrapper<TeacherProfile>().eq(TeacherProfile::getUserId, userId).last("limit 1")
+        );
+        if (profile == null) {
+            profile = new TeacherProfile();
+            profile.setUserId(userId);
+            profile.setStatus("ACTIVE");
+            profile.setTeacherNo(normalizeText(teacherNo));
+            profile.setTitle(normalizeText(title));
+            teacherProfileMapper.insert(profile);
+            return;
+        }
+        profile.setTeacherNo(normalizeText(teacherNo));
+        profile.setTitle(normalizeText(title));
+        teacherProfileMapper.updateById(profile);
+    }
+
+    @Transactional
     public void updateStudentTeachingClasses(Long userId, List<Long> teachingClassIds, List<String> roleCodes) {
         boolean isStudent = roleCodes.contains(ROLE_STUDENT);
         List<Long> targetIds = teachingClassIds == null ? List.of() : teachingClassIds.stream()

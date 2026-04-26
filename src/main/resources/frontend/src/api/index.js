@@ -67,6 +67,24 @@ export const updateCourseApi = (id, data) => http.put(`/admin/courses/${id}`, da
 export const listTeachingClassesApi = () => http.get('/admin/teaching-classes')
 export const createTeachingClassApi = (data) => http.post('/admin/teaching-classes', data)
 export const updateTeachingClassApi = (id, data) => http.put(`/admin/teaching-classes/${id}`, data)
+export const importUsersApi = (role, dryRun, formData) =>
+  http.post(`/admin/users/import?role=${encodeURIComponent(role)}&dryRun=${dryRun}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+export const importTeachingClassesApi = (dryRun, formData) =>
+  http.post(`/admin/teaching-classes/import?dryRun=${dryRun}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+export const importExamSchedulesApi = (dryRun, formData) =>
+  http.post(`/admin/exam-schedules/import?dryRun=${dryRun}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+export const batchUsersApi = (data) => http.post('/admin/users/batch', data)
+export const batchTeachingClassesApi = (data) => http.post('/admin/teaching-classes/batch', data)
+export const batchExamsApi = (data) => http.post('/admin/exams/batch', data)
+export const adminExamMonitorSummaryApi = (params = {}) => http.get('/admin/exam-monitor/summary', { params })
+export const adminExamMonitorStudentsApi = (examId) => http.get(`/admin/exam-monitor/exams/${examId}/students`)
+export const auditLogsApi = (params = {}) => http.get('/admin/audit-logs', { params })
 
 export const examTeachingClassesApi = () => http.get('/exams/teaching-classes')
 
