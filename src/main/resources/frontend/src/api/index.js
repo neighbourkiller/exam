@@ -64,6 +64,10 @@ export const createRoleApi = (data) => http.post('/admin/roles', data)
 export const listCoursesApi = () => http.get('/admin/courses')
 export const createCourseApi = (data) => http.post('/admin/courses', data)
 export const updateCourseApi = (id, data) => http.put(`/admin/courses/${id}`, data)
+export const importCoursesApi = (dryRun, formData) =>
+  http.post(`/admin/courses/import?dryRun=${dryRun}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
 export const listTeachingClassesApi = () => http.get('/admin/teaching-classes')
 export const createTeachingClassApi = (data) => http.post('/admin/teaching-classes', data)
 export const updateTeachingClassApi = (id, data) => http.put(`/admin/teaching-classes/${id}`, data)

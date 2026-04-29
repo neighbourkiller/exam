@@ -10,6 +10,7 @@
     <el-tabs v-model="activeType">
       <el-tab-pane label="学生" name="STUDENT" />
       <el-tab-pane label="教师" name="TEACHER" />
+      <el-tab-pane label="课程" name="COURSE" />
       <el-tab-pane label="教学班" name="CLASS" />
       <el-tab-pane label="考试安排" name="EXAM" />
     </el-tabs>
@@ -50,7 +51,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { importExamSchedulesApi, importTeachingClassesApi, importUsersApi } from '../../api'
+import { importCoursesApi, importExamSchedulesApi, importTeachingClassesApi, importUsersApi } from '../../api'
 
 const activeType = ref('STUDENT')
 const selectedFile = ref(null)
@@ -63,6 +64,7 @@ const canConfirm = computed(() => result.value && (result.value.failureCount || 
 const templates = {
   STUDENT: 'username,realName,password,studentNo,teachingClassIds\ns001,张三,123456,S001,"1001,1002"\n',
   TEACHER: 'username,realName,password,teacherNo,title\nteacher01,李老师,123456,T001,讲师\n',
+  COURSE: 'id,name,description\n1,Java程序设计,Java基础课程\n',
   CLASS: 'id,name,subjectId,teacherId,teacherUsername,term,status,capacity\n1001,高一数学1班,1,2,,2026春,ONGOING,60\n',
   EXAM: 'name,paperId,startTime,endTime,durationMinutes,passScore,targetClassIds,autoPublish,proctoringLevel\n期中考试,1,2026-05-01 09:00:00,2026-05-01 11:00:00,120,60,"1001,1002",true,STRICT\n'
 }
@@ -90,6 +92,8 @@ const runImport = async (dryRun) => {
     const formData = buildFormData()
     if (activeType.value === 'STUDENT' || activeType.value === 'TEACHER') {
       result.value = await importUsersApi(activeType.value, dryRun, formData)
+    } else if (activeType.value === 'COURSE') {
+      result.value = await importCoursesApi(dryRun, formData)
     } else if (activeType.value === 'CLASS') {
       result.value = await importTeachingClassesApi(dryRun, formData)
     } else {

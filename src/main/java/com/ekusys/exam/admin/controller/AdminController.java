@@ -126,6 +126,14 @@ public class AdminController {
         return ApiResponse.ok("创建成功", adminService.createCourse(request));
     }
 
+    @PostMapping(value = "/courses/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @AuditOperation(action = "BULK_COURSE_IMPORT", targetType = "COURSE", targetId = "'bulk'",
+        detail = "'dryRun=' + #dryRun")
+    public ApiResponse<BulkImportResultView> importCourses(@RequestParam("file") MultipartFile file,
+                                                           @RequestParam(value = "dryRun", defaultValue = "true") boolean dryRun) {
+        return ApiResponse.ok("导入处理完成", adminBulkService.importCourses(file, dryRun));
+    }
+
     @PutMapping("/courses/{courseId}")
     @AuditOperation(action = "COURSE_UPDATE", targetType = "COURSE", targetId = "#courseId", detail = "#request.name")
     public ApiResponse<Void> updateCourse(@PathVariable Long courseId, @Valid @RequestBody CourseUpdateRequest request) {

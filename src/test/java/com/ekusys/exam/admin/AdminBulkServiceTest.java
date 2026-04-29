@@ -12,6 +12,7 @@ import com.ekusys.exam.admin.dto.BulkUserOperationRequest;
 import com.ekusys.exam.admin.service.AdminBulkService;
 import com.ekusys.exam.admin.service.AdminCsvImportService;
 import com.ekusys.exam.admin.service.RoleAdminService;
+import com.ekusys.exam.admin.service.SubjectAdminService;
 import com.ekusys.exam.admin.service.TeachingClassAdminService;
 import com.ekusys.exam.admin.service.UserAdminService;
 import com.ekusys.exam.admin.service.UserProfileSyncService;
@@ -19,9 +20,11 @@ import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.exam.service.ExamService;
 import com.ekusys.exam.repository.entity.Paper;
 import com.ekusys.exam.repository.entity.Role;
+import com.ekusys.exam.repository.entity.Subject;
 import com.ekusys.exam.repository.entity.TeachingClass;
 import com.ekusys.exam.repository.mapper.PaperMapper;
 import com.ekusys.exam.repository.mapper.RoleMapper;
+import com.ekusys.exam.repository.mapper.SubjectMapper;
 import com.ekusys.exam.repository.mapper.TeachingClassMapper;
 import com.ekusys.exam.repository.mapper.UserMapper;
 import java.nio.charset.StandardCharsets;
@@ -45,6 +48,8 @@ class AdminBulkServiceTest {
     @Mock
     private TeachingClassAdminService teachingClassAdminService;
     @Mock
+    private SubjectAdminService subjectAdminService;
+    @Mock
     private ExamService examService;
     @Mock
     private UserMapper userMapper;
@@ -52,6 +57,8 @@ class AdminBulkServiceTest {
     private PaperMapper paperMapper;
     @Mock
     private RoleMapper roleMapper;
+    @Mock
+    private SubjectMapper subjectMapper;
     @Mock
     private TeachingClassMapper teachingClassMapper;
 
@@ -65,10 +72,12 @@ class AdminBulkServiceTest {
             roleAdminService,
             userProfileSyncService,
             teachingClassAdminService,
+            subjectAdminService,
             examService,
             userMapper,
             paperMapper,
             roleMapper,
+            subjectMapper,
             teachingClassMapper
         );
     }
@@ -113,6 +122,42 @@ class AdminBulkServiceTest {
         assertEquals(1, result.getFailureCount());
         assertEquals("目标教学班课程与试卷课程不一致", result.getErrors().getFirst().getMessage());
         verify(examService, never()).createExam(any());
+    }
+
+    @Test
+    void dryRunCourseImportShouldValidateCreateAndUpdateRows() {
+        Subject existing = new Subject();
+        existing.setId(5001L);
+        when(subjectMapper.selectById(5001L)).thenReturn(existing);
+        MockMultipartFile file = csvFile(
+            "courses.csv",
+            "id,name,description\n"
+                + "5001,Java程序设计,更新描述\n"
+                + "5002,Spring框架,新增课程\n"
+        );
+
+        BulkImportResultView result = adminBulkService.importCourses(file, true);
+
+        assertEquals(2, result.getSuccessCount());
+        verify(subjectAdminService).validateUpdateCourse(any(), any());
+        verify(subjectAdminService).validateCreateCourse(any());
+        verify(subjectAdminService, never()).updateCourse(any(), any());
+        verify(subjectAdminService, never()).createCourse(any());
+    }
+
+    @Test
+    void courseImportShouldRejectDuplicateNameInFile() {
+        MockMultipartFile file = csvFile(
+            "courses.csv",
+            "id,name,description\n"
+                + "5001,Java程序设计,基础\n"
+                + "5002,Java程序设计,重复\n"
+        );
+
+        BulkImportResultView result = adminBulkService.importCourses(file, true);
+
+        assertEquals(1, result.getFailureCount());
+        assertEquals("课程名称在导入文件中重复", result.getErrors().getFirst().getMessage());
     }
 
     @Test

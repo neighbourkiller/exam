@@ -6,6 +6,8 @@ import com.ekusys.exam.admin.dto.BulkImportResultView;
 import com.ekusys.exam.admin.dto.BulkImportRowErrorView;
 import com.ekusys.exam.admin.dto.BulkTeachingClassOperationRequest;
 import com.ekusys.exam.admin.dto.BulkUserOperationRequest;
+import com.ekusys.exam.admin.dto.CourseCreateRequest;
+import com.ekusys.exam.admin.dto.CourseUpdateRequest;
 import com.ekusys.exam.admin.dto.TeachingClassCreateRequest;
 import com.ekusys.exam.admin.dto.TeachingClassUpdateRequest;
 import com.ekusys.exam.admin.dto.UserCreateRequest;
@@ -14,10 +16,12 @@ import com.ekusys.exam.exam.dto.ExamCreateRequest;
 import com.ekusys.exam.exam.service.ExamService;
 import com.ekusys.exam.repository.entity.Paper;
 import com.ekusys.exam.repository.entity.Role;
+import com.ekusys.exam.repository.entity.Subject;
 import com.ekusys.exam.repository.entity.TeachingClass;
 import com.ekusys.exam.repository.entity.User;
 import com.ekusys.exam.repository.mapper.PaperMapper;
 import com.ekusys.exam.repository.mapper.RoleMapper;
+import com.ekusys.exam.repository.mapper.SubjectMapper;
 import com.ekusys.exam.repository.mapper.TeachingClassMapper;
 import com.ekusys.exam.repository.mapper.UserMapper;
 import java.time.LocalDateTime;
@@ -43,10 +47,12 @@ public class AdminBulkService {
     private final RoleAdminService roleAdminService;
     private final UserProfileSyncService userProfileSyncService;
     private final TeachingClassAdminService teachingClassAdminService;
+    private final SubjectAdminService subjectAdminService;
     private final ExamService examService;
     private final UserMapper userMapper;
     private final PaperMapper paperMapper;
     private final RoleMapper roleMapper;
+    private final SubjectMapper subjectMapper;
     private final TeachingClassMapper teachingClassMapper;
 
     public AdminBulkService(AdminCsvImportService csvImportService,
@@ -54,20 +60,24 @@ public class AdminBulkService {
                             RoleAdminService roleAdminService,
                             UserProfileSyncService userProfileSyncService,
                             TeachingClassAdminService teachingClassAdminService,
+                            SubjectAdminService subjectAdminService,
                             ExamService examService,
                             UserMapper userMapper,
                             PaperMapper paperMapper,
                             RoleMapper roleMapper,
+                            SubjectMapper subjectMapper,
                             TeachingClassMapper teachingClassMapper) {
         this.csvImportService = csvImportService;
         this.userAdminService = userAdminService;
         this.roleAdminService = roleAdminService;
         this.userProfileSyncService = userProfileSyncService;
         this.teachingClassAdminService = teachingClassAdminService;
+        this.subjectAdminService = subjectAdminService;
         this.examService = examService;
         this.userMapper = userMapper;
         this.paperMapper = paperMapper;
         this.roleMapper = roleMapper;
+        this.subjectMapper = subjectMapper;
         this.teachingClassMapper = teachingClassMapper;
     }
 
@@ -93,6 +103,55 @@ public class AdminBulkService {
                     }
                 } else {
                     userAdminService.validateCreateUser(request);
+                }
+                success++;
+            } catch (RowException ex) {
+                errors.add(toError(row.rowNumber(), ex.field, ex.getMessage(), ex.rawValue));
+            } catch (Exception ex) {
+                errors.add(toError(row.rowNumber(), null, ex.getMessage(), null));
+            }
+        }
+        return importResult(csv.rows().size(), success, dryRun, errors);
+    }
+
+    public BulkImportResultView importCourses(MultipartFile file, boolean dryRun) {
+        AdminCsvImportService.ParsedCsv csv = csvImportService.parse(file);
+        List<BulkImportRowErrorView> errors = new ArrayList<>();
+        LinkedHashSet<Long> seenIds = new LinkedHashSet<>();
+        LinkedHashSet<String> seenNames = new LinkedHashSet<>();
+        int success = 0;
+        for (AdminCsvImportService.CsvRow row : csv.rows()) {
+            try {
+                validateRequired(row, "name");
+                Long id = parseLong(value(row, "id"), "id");
+                if (id != null && !seenIds.add(id)) {
+                    throw new RowException("id", "课程ID在导入文件中重复", value(row, "id"));
+                }
+                String name = value(row, "name").trim();
+                if (!seenNames.add(name)) {
+                    throw new RowException("name", "课程名称在导入文件中重复", name);
+                }
+
+                Subject existing = id == null ? null : subjectMapper.selectById(id);
+                if (existing == null) {
+                    CourseCreateRequest request = new CourseCreateRequest();
+                    request.setId(id);
+                    request.setName(name);
+                    request.setDescription(emptyToNull(value(row, "description")));
+                    if (dryRun) {
+                        subjectAdminService.validateCreateCourse(request);
+                    } else {
+                        subjectAdminService.createCourse(request);
+                    }
+                } else {
+                    CourseUpdateRequest request = new CourseUpdateRequest();
+                    request.setName(name);
+                    request.setDescription(emptyToNull(value(row, "description")));
+                    if (dryRun) {
+                        subjectAdminService.validateUpdateCourse(id, request);
+                    } else {
+                        subjectAdminService.updateCourse(id, request);
+                    }
                 }
                 success++;
             } catch (RowException ex) {
