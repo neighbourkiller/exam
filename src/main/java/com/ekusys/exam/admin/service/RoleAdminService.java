@@ -46,32 +46,36 @@ public class RoleAdminService {
     @Transactional
     public void assignRoles(Long userId, List<Long> roleIds, List<Long> teachingClassIds) {
         ensureUser(userId);
-        List<Long> safeRoleIds = roleIds == null ? List.of() : roleIds.stream()
-            .filter(Objects::nonNull)
-            .distinct()
-            .toList();
+        List<Long> safeRoleIds = normalizeRoleIds(roleIds);
+        List<String> roleCodes = validateRoleAssignment(roleIds, teachingClassIds);
 
         userRoleMapper.delete(new LambdaQueryWrapper<UserRole>().eq(UserRole::getUserId, userId));
         for (Long roleId : safeRoleIds) {
-            Role role = roleMapper.selectById(roleId);
-            if (role == null) {
-                throw new BusinessException("角色不存在: " + roleId);
-            }
             UserRole ur = new UserRole();
             ur.setUserId(userId);
             ur.setRoleId(roleId);
             userRoleMapper.insert(ur);
         }
 
-        List<String> roleCodes = safeRoleIds.stream()
-            .map(roleMapper::selectById)
-            .filter(Objects::nonNull)
-            .map(Role::getCode)
-            .toList();
         userProfileSyncService.syncProfilesByRoleCodes(userId, roleCodes);
         if (teachingClassIds != null || !roleCodes.contains(ROLE_STUDENT)) {
             userProfileSyncService.updateStudentTeachingClasses(userId, teachingClassIds, roleCodes);
         }
+    }
+
+    public List<String> validateRoleAssignment(List<Long> roleIds, List<Long> teachingClassIds) {
+        List<Long> safeRoleIds = normalizeRoleIds(roleIds);
+        List<String> roleCodes = safeRoleIds.stream()
+            .map(roleId -> {
+                Role role = roleMapper.selectById(roleId);
+                if (role == null) {
+                    throw new BusinessException("角色不存在: " + roleId);
+                }
+                return role.getCode();
+            })
+            .toList();
+        userProfileSyncService.validateStudentTeachingClasses(teachingClassIds, roleCodes);
+        return roleCodes;
     }
 
     @Transactional
@@ -137,5 +141,12 @@ public class RoleAdminService {
             throw new BusinessException("用户不存在");
         }
         return user;
+    }
+
+    private List<Long> normalizeRoleIds(List<Long> roleIds) {
+        return roleIds == null ? List.of() : roleIds.stream()
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
     }
 }

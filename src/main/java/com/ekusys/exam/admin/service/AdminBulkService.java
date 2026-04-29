@@ -12,6 +12,7 @@ import com.ekusys.exam.admin.dto.UserCreateRequest;
 import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.exam.dto.ExamCreateRequest;
 import com.ekusys.exam.exam.service.ExamService;
+import com.ekusys.exam.repository.entity.Paper;
 import com.ekusys.exam.repository.entity.Role;
 import com.ekusys.exam.repository.entity.TeachingClass;
 import com.ekusys.exam.repository.entity.User;
@@ -75,28 +76,23 @@ public class AdminBulkService {
         Role targetRole = ensureRole(roleCode);
         AdminCsvImportService.ParsedCsv csv = csvImportService.parse(file);
         List<BulkImportRowErrorView> errors = new ArrayList<>();
+        LinkedHashSet<String> seenUsernames = new LinkedHashSet<>();
         int success = 0;
         for (AdminCsvImportService.CsvRow row : csv.rows()) {
             try {
                 validateRequired(row, "username", "realName");
                 String username = value(row, "username");
-                if (userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username)) != null) {
-                    throw new RowException("username", "用户名已存在", username);
+                if (!seenUsernames.add(username)) {
+                    throw new RowException("username", "用户名在导入文件中重复", username);
                 }
+                UserCreateRequest request = buildUserCreateRequest(row, roleCode, targetRole.getId(), username);
                 if (!dryRun) {
-                    UserCreateRequest request = new UserCreateRequest();
-                    request.setUsername(username);
-                    request.setRealName(value(row, "realName"));
-                    request.setPassword(emptyToNull(value(row, "password")));
-                    request.setRoleIds(List.of(targetRole.getId()));
-                    if ("STUDENT".equals(roleCode)) {
-                        request.setStudentNo(emptyToNull(value(row, "studentNo")));
-                        request.setTeachingClassIds(parseLongList(value(row, "teachingClassIds")));
-                    }
                     Long userId = userAdminService.createUser(request);
                     if ("TEACHER".equals(roleCode)) {
                         userProfileSyncService.syncTeacherProfile(userId, value(row, "teacherNo"), value(row, "title"));
                     }
+                } else {
+                    userAdminService.validateCreateUser(request);
                 }
                 success++;
             } catch (RowException ex) {
@@ -197,7 +193,12 @@ public class AdminBulkService {
             switch (action) {
                 case "ENABLE" -> updateUserEnabled(userId, true);
                 case "DISABLE" -> updateUserEnabled(userId, false);
-                case "RESET_PASSWORD" -> userAdminService.resetPassword(userId, request.getPassword());
+                case "RESET_PASSWORD" -> {
+                    if (emptyToNull(request.getPassword()) == null) {
+                        throw new BusinessException("密码不能为空");
+                    }
+                    userAdminService.resetPassword(userId, request.getPassword());
+                }
                 case "ASSIGN_ROLES" -> roleAdminService.assignRoles(userId, request.getRoleIds(), request.getTeachingClassIds());
                 case "ASSIGN_CLASSES" -> userProfileSyncService.updateStudentTeachingClasses(
                     userId,
@@ -254,16 +255,43 @@ public class AdminBulkService {
     }
 
     private void validateExamSchedule(ExamCreateRequest request) {
-        if (paperMapper.selectById(request.getPaperId()) == null) {
+        Paper paper = paperMapper.selectById(request.getPaperId());
+        if (paper == null) {
             throw new BusinessException("试卷不存在");
+        }
+        Long paperSubjectId = paper.getSubjectId();
+        if (paperSubjectId == null) {
+            throw new BusinessException("试卷未绑定课程，无法发布考试");
         }
         List<Long> classIds = request.getTargetClassIds() == null ? List.of() : request.getTargetClassIds();
         if (classIds.isEmpty()) {
             throw new BusinessException("目标教学班不能为空");
         }
-        if (teachingClassMapper.selectBatchIds(classIds).size() != classIds.size()) {
+        List<TeachingClass> teachingClasses = teachingClassMapper.selectBatchIds(classIds);
+        if (teachingClasses.size() != classIds.size()) {
             throw new BusinessException("存在无效教学班ID");
         }
+        for (TeachingClass teachingClass : teachingClasses) {
+            if (!Objects.equals(paperSubjectId, teachingClass.getSubjectId())) {
+                throw new BusinessException("目标教学班课程与试卷课程不一致");
+            }
+        }
+    }
+
+    private UserCreateRequest buildUserCreateRequest(AdminCsvImportService.CsvRow row,
+                                                     String roleCode,
+                                                     Long roleId,
+                                                     String username) {
+        UserCreateRequest request = new UserCreateRequest();
+        request.setUsername(username);
+        request.setRealName(value(row, "realName"));
+        request.setPassword(emptyToNull(value(row, "password")));
+        request.setRoleIds(List.of(roleId));
+        if ("STUDENT".equals(roleCode)) {
+            request.setStudentNo(emptyToNull(value(row, "studentNo")));
+            request.setTeachingClassIds(parseLongList(value(row, "teachingClassIds")));
+        }
+        return request;
     }
 
     private String normalizeRole(String role) {
