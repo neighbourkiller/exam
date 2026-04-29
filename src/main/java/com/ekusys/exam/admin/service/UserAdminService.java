@@ -84,10 +84,7 @@ public class UserAdminService {
 
     @Transactional
     public Long createUser(UserCreateRequest request) {
-        User existing = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, request.getUsername()));
-        if (existing != null) {
-            throw new BusinessException("用户名已存在");
-        }
+        ensureUsernameAvailable(request.getUsername());
 
         User user = new User();
         user.setUsername(request.getUsername());
@@ -133,9 +130,25 @@ public class UserAdminService {
 
     @Transactional
     public void resetPassword(Long userId, String password) {
+        if (password == null || password.isBlank()) {
+            throw new BusinessException("密码不能为空");
+        }
         User user = ensureUser(userId);
         user.setPassword(passwordEncoder.encode(password));
         userMapper.updateById(user);
+    }
+
+    public void validateCreateUser(UserCreateRequest request) {
+        ensureUsernameAvailable(request.getUsername());
+        resolvePassword(request.getPassword());
+        roleAdminService.validateRoleAssignment(request.getRoleIds(), request.getTeachingClassIds());
+    }
+
+    private void ensureUsernameAvailable(String username) {
+        User existing = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
+        if (existing != null) {
+            throw new BusinessException("用户名已存在");
+        }
     }
 
     private User ensureUser(Long userId) {

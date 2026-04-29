@@ -141,18 +141,30 @@ public class UserProfileSyncService {
     }
 
     @Transactional
-    public void updateStudentTeachingClasses(Long userId, List<Long> teachingClassIds, List<String> roleCodes) {
-        boolean isStudent = roleCodes.contains(ROLE_STUDENT);
-        List<Long> targetIds = teachingClassIds == null ? List.of() : teachingClassIds.stream()
-            .filter(Objects::nonNull)
-            .collect(Collectors.toCollection(LinkedHashSet::new))
-            .stream()
-            .toList();
+    public void syncTeacherProfile(Long userId, String teacherNo, String title) {
+        TeacherProfile profile = teacherProfileMapper.selectOne(
+            new LambdaQueryWrapper<TeacherProfile>().eq(TeacherProfile::getUserId, userId).last("limit 1")
+        );
+        if (profile == null) {
+            profile = new TeacherProfile();
+            profile.setUserId(userId);
+            profile.setStatus("ACTIVE");
+            profile.setTeacherNo(normalizeText(teacherNo));
+            profile.setTitle(normalizeText(title));
+            teacherProfileMapper.insert(profile);
+            return;
+        }
+        profile.setTeacherNo(normalizeText(teacherNo));
+        profile.setTitle(normalizeText(title));
+        teacherProfileMapper.updateById(profile);
+    }
 
-        if (!isStudent) {
-            if (!targetIds.isEmpty()) {
-                throw new BusinessException("仅学生角色可分配教学班");
-            }
+    @Transactional
+    public void updateStudentTeachingClasses(Long userId, List<Long> teachingClassIds, List<String> roleCodes) {
+        List<String> safeRoleCodes = roleCodes == null ? List.of() : roleCodes;
+        List<Long> targetIds = validateStudentTeachingClasses(teachingClassIds, roleCodes);
+
+        if (!safeRoleCodes.contains(ROLE_STUDENT)) {
             studentTeachingClassMapper.delete(new LambdaQueryWrapper<StudentTeachingClass>().eq(StudentTeachingClass::getStudentId, userId));
             return;
         }
@@ -190,6 +202,46 @@ public class UserProfileSyncService {
             relation.setEnrolledAt(LocalDateTime.now());
             studentTeachingClassMapper.insert(relation);
         }
+    }
+
+    public List<Long> validateStudentTeachingClasses(List<Long> teachingClassIds, List<String> roleCodes) {
+        List<String> safeRoleCodes = roleCodes == null ? List.of() : roleCodes;
+        boolean isStudent = safeRoleCodes.contains(ROLE_STUDENT);
+        List<Long> targetIds = teachingClassIds == null ? List.of() : teachingClassIds.stream()
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(LinkedHashSet::new))
+            .stream()
+            .toList();
+
+        if (!isStudent) {
+            if (!targetIds.isEmpty()) {
+                throw new BusinessException("仅学生角色可分配教学班");
+            }
+            return targetIds;
+        }
+
+        if (targetIds.isEmpty()) {
+            return targetIds;
+        }
+
+        List<TeachingClass> classes = teachingClassMapper.selectBatchIds(targetIds);
+        if (classes.size() != targetIds.size()) {
+            throw new BusinessException("存在无效教学班ID");
+        }
+        Map<Long, TeachingClass> classMap = classes.stream()
+            .collect(Collectors.toMap(TeachingClass::getId, item -> item, (a, b) -> a));
+
+        Set<Long> subjectSet = new LinkedHashSet<>();
+        for (Long classId : targetIds) {
+            TeachingClass teachingClass = classMap.get(classId);
+            if (teachingClass == null) {
+                throw new BusinessException("存在无效教学班ID");
+            }
+            if (!subjectSet.add(teachingClass.getSubjectId())) {
+                throw new BusinessException("同一课程仅可分配一个教学班");
+            }
+        }
+        return targetIds;
     }
 
     @Transactional
