@@ -1,38 +1,35 @@
 <template>
   <div class="results-page">
-    <section class="results-hero glass-card">
+    <section class="results-hero">
       <div class="hero-content">
-        <h1 class="results-title">
-          <span class="title-icon">📊</span> 考试结果中心
-        </h1>
+        <p>成绩档案</p>
+        <h1 class="results-title">考试结果中心</h1>
         <p class="results-subtitle">查看全部考试与成绩状态，包含待阅卷与未交卷记录。</p>
       </div>
-      <el-button type="primary" round @click="loadResults" class="refresh-btn">刷新数据</el-button>
+      <el-button plain round @click="loadResults" class="refresh-btn">刷新数据</el-button>
     </section>
 
     <section class="metrics-row">
-      <article class="metric-item glass-card hover-lift" style="animation-delay: 0.1s">
+      <article class="metric-item" style="animation-delay: 0.1s">
         <div class="metric-label">总考试数</div>
-        <div class="metric-value text-brand">{{ metrics.totalCount }}</div>
+        <div class="metric-value">{{ metrics.totalCount }}</div>
       </article>
-      <article class="metric-item glass-card hover-lift" style="animation-delay: 0.2s">
+      <article class="metric-item" style="animation-delay: 0.2s">
         <div class="metric-label">已交卷</div>
-        <div class="metric-value text-blue">{{ metrics.submittedCount }}</div>
+        <div class="metric-value">{{ metrics.submittedCount }}</div>
       </article>
-      <article class="metric-item glass-card hover-lift" style="animation-delay: 0.3s">
+      <article class="metric-item" style="animation-delay: 0.3s">
         <div class="metric-label">已出分</div>
-        <div class="metric-value text-green">{{ metrics.gradedCount }}</div>
+        <div class="metric-value">{{ metrics.gradedCount }}</div>
       </article>
-      <article class="metric-item glass-card hover-lift" style="animation-delay: 0.4s">
+      <article class="metric-item" style="animation-delay: 0.4s">
         <div class="metric-label">已通过</div>
-        <div class="metric-value text-orange">{{ metrics.passCount }}</div>
+        <div class="metric-value">{{ metrics.passCount }}</div>
       </article>
     </section>
 
-    <section class="table-section glass-card">
-      <el-table :data="rows" class="custom-table" style="width: 100%"
-        :header-cell-style="{ background: 'transparent', color: 'var(--brand)', fontWeight: '600', borderBottom: '1px solid rgba(13, 148, 136, 0.2)' }"
-        :row-style="{ background: 'transparent' }">
+    <section class="table-section">
+      <el-table :data="rows" class="results-table" style="width: 100%">
         <el-table-column label="课程" width="170">
           <template #default="{ row }"><span class="fw-semibold">{{ row.subjectName || '--' }}</span></template>
         </el-table-column>
@@ -150,43 +147,51 @@ onMounted(loadResults)
 <style scoped>
 .results-page {
   display: grid;
-  gap: 20px;
-  padding: 10px;
+  gap: 22px;
 }
 
 .results-hero {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 24px 32px;
-  background: linear-gradient(135deg, rgba(204, 251, 241, 0.7) 0%, rgba(255, 255, 255, 0.4) 100%);
-  border-left: 4px solid var(--brand);
+  align-items: flex-end;
+  gap: 20px;
+  padding: 34px 36px;
+  border: 1px solid var(--student-line, #e7dfd3);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--shadow-soft);
 }
 
 .hero-content {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+}
+
+.hero-content > p:first-child {
+  margin: 0;
+  color: var(--student-accent, #d97757);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .results-title {
   margin: 0;
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--brand);
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  color: var(--text-main);
+  font-family: Georgia, 'Times New Roman', 'Songti SC', serif;
+  font-size: clamp(34px, 4vw, 52px);
+  font-weight: 500;
+  line-height: 1.08;
 }
 
 .results-subtitle {
   margin: 0;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .refresh-btn {
-  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.2);
+  background: #fffdfa;
 }
 
 .metrics-row {
@@ -196,13 +201,17 @@ onMounted(loadResults)
 }
 
 .metric-item {
-  padding: 24px;
+  padding: 22px 24px;
+  border: 1px solid var(--student-line, #e7dfd3);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 12px;
   animation: fadeUp 0.6s ease-out backwards;
+  box-shadow: 0 10px 26px rgba(54, 43, 33, 0.04);
 }
 
 .metric-label {
@@ -212,8 +221,10 @@ onMounted(loadResults)
 }
 
 .metric-value {
-  font-size: 36px;
-  font-weight: 800;
+  color: var(--text-main);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 42px;
+  font-weight: 500;
   line-height: 1;
 }
 
@@ -224,7 +235,11 @@ onMounted(loadResults)
 .text-red { color: #ef4444; }
 
 .table-section {
-  padding: 20px;
+  padding: 24px;
+  border: 1px solid var(--student-line, #e7dfd3);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--shadow-soft);
 }
 
 .score-split {
@@ -250,15 +265,35 @@ onMounted(loadResults)
 .fw-semibold { font-weight: 600; }
 .text-muted { color: var(--text-muted); font-size: 13px; }
 
-/* Make table transparent for glassmorphism */
-:deep(.el-table), :deep(.el-table__expanded-cell) {
+.results-table {
+  --el-table-header-bg-color: #f6f1e9;
+  --el-table-header-text-color: var(--text-main);
+  --el-table-row-hover-bg-color: #faf6ef;
+  --el-table-border-color: var(--student-line, #e7dfd3);
+  --el-table-text-color: var(--text-main);
+  --el-table-tr-bg-color: transparent;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.results-table :deep(.el-table),
+.results-table :deep(.el-table__expanded-cell) {
   background-color: transparent !important;
 }
-:deep(.el-table tr), :deep(.el-table td.el-table__cell) {
-  background-color: transparent !important;
-  border-bottom: 1px solid rgba(13, 148, 136, 0.08);
+
+.results-table :deep(.el-table th.el-table__cell) {
+  font-weight: 700;
 }
-:deep(.el-table::before) { display: none; }
+
+.results-table :deep(.el-table tr),
+.results-table :deep(.el-table td.el-table__cell) {
+  background-color: transparent !important;
+  border-bottom-color: var(--student-line, #e7dfd3);
+}
+
+.results-table :deep(.el-table::before) {
+  display: none;
+}
 
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(20px); }
@@ -273,7 +308,9 @@ onMounted(loadResults)
   .results-hero {
     flex-direction: column;
     align-items: flex-start;
+    padding: 24px;
   }
   .metrics-row { grid-template-columns: 1fr; }
+  .table-section { padding: 16px; }
 }
 </style>

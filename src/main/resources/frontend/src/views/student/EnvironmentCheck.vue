@@ -108,13 +108,14 @@ onBeforeUnmount(() => {
 <style scoped>
 .environment-check-page {
   display: grid;
-  gap: 20px;
+  gap: 22px;
 }
 
 .environment-check-hero,
 .environment-check-content {
-  border-radius: var(--radius-lg);
-  background: var(--bg-card);
+  border: 1px solid var(--student-line, #e7dfd3);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
   box-shadow: var(--shadow-soft);
 }
 
@@ -123,13 +124,12 @@ onBeforeUnmount(() => {
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  padding: 28px 32px;
-  border: 1px solid rgba(59, 130, 246, 0.08);
+  padding: 34px 36px;
 }
 
 .environment-check-hero__eyebrow {
   margin: 0 0 8px;
-  color: var(--brand);
+  color: var(--student-accent, #d97757);
   font-size: 13px;
   font-weight: 700;
 }
@@ -137,14 +137,18 @@ onBeforeUnmount(() => {
 .environment-check-hero h1 {
   margin: 0;
   color: var(--text-main);
-  font-size: 28px;
-  line-height: 1.2;
+  font-family: Georgia, 'Times New Roman', 'Songti SC', serif;
+  font-size: clamp(34px, 4vw, 52px);
+  font-weight: 500;
+  line-height: 1.08;
 }
 
 .environment-check-hero__meta {
-  margin: 10px 0 0;
+  max-width: 560px;
+  margin: 14px 0 0;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 15px;
+  line-height: 1.7;
 }
 
 .environment-check-hero__actions {
@@ -154,7 +158,14 @@ onBeforeUnmount(() => {
 }
 
 .environment-check-content {
-  padding: 24px;
+  padding: 26px;
+}
+
+.environment-check-page :deep(.el-button--primary) {
+  --el-button-bg-color: var(--student-accent, #d97757);
+  --el-button-border-color: var(--student-accent, #d97757);
+  --el-button-hover-bg-color: var(--student-accent-dark, #a9472d);
+  --el-button-hover-border-color: var(--student-accent-dark, #a9472d);
 }
 
 @media (max-width: 768px) {

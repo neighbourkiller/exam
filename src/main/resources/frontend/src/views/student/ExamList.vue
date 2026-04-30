@@ -1,19 +1,42 @@
 <template>
-  <div class="exam-list-container">
-    <el-card class="page-card hover-lift" style="border: none;">
-      <template #header>
-        <div class="header-content">
-          <div class="header">
-            <span class="header-icon">📚</span>
-            <span>我的考试</span>
-          </div>
-          <el-button type="primary" plain round @click="load">刷新列表</el-button>
+  <div class="student-exams-page">
+    <section class="student-hero">
+      <div class="student-hero__plan">Student workspace</div>
+      <h1><span class="hero-burst" aria-hidden="true"></span><span>{{ greetingText }}，{{ auth.username || 'student' }}</span></h1>
+
+      <div class="exam-command-panel">
+        <el-input
+          v-model="keyword"
+          size="large"
+          clearable
+          placeholder="查找考试或输入课程名称"
+          class="exam-search"
+        />
+      </div>
+
+      <div class="exam-filters" aria-label="考试筛选">
+        <button
+          v-for="item in filters"
+          :key="item.key"
+          type="button"
+          :class="['filter-pill', { 'is-active': filterKey === item.key }]"
+          @click="filterKey = item.key"
+        >
+          {{ item.label }}
+        </button>
+      </div>
+    </section>
+
+    <section class="exam-panel">
+      <div class="exam-panel__header">
+        <div>
+          <p>我的考试</p>
+          <h2>考试列表</h2>
         </div>
-      </template>
-      
-      <el-table :data="exams" class="custom-table" style="width: 100%;"
-        :header-cell-style="{ background: 'var(--bg-main)', color: 'var(--brand)', fontWeight: '600' }"
-        :row-style="{ background: 'transparent' }">
+        <button type="button" class="refresh-action" @click="load">刷新列表</button>
+      </div>
+
+      <el-table :data="filteredExams" class="student-table" style="width: 100%;">
         <el-table-column label="课程" width="170">
           <template #default="{ row }"><span class="course-name">{{ row.subjectName || '--' }}</span></template>
         </el-table-column>
@@ -24,30 +47,40 @@
         <el-table-column label="结束时间" width="190">
           <template #default="{ row }"><span class="time-text">{{ formatDateTime(row.endTime) }}</span></template>
         </el-table-column>
-        <el-table-column label="状态" width="100">
+        <el-table-column label="状态" width="120" align="center" header-align="center">
           <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)" effect="light" round>{{ row.status }}</el-tag>
+            <span :class="['status-chip', statusTone(row.status)]">{{ row.status || '--' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="监考策略" width="110">
+        <el-table-column label="监考策略" width="110" align="center" header-align="center">
           <template #default="{ row }">
-            <el-tag effect="plain" size="small">{{ policyLevelLabel(row.proctoringLevel || row.proctoringPolicy?.level) }}</el-tag>
+            <span class="policy-chip">{{ policyLevelLabel(row.proctoringLevel || row.proctoringPolicy?.level) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="已提交" width="90">
+        <el-table-column label="已提交" width="90" align="center" header-align="center">
           <template #default="{ row }">
-            <el-tag :type="row.submitted ? 'success' : 'info'" size="small" round>{{ row.submitted ? '是' : '否' }}</el-tag>
+            <span :class="['submit-chip', row.submitted ? 'is-submitted' : 'is-pending']">
+              {{ row.submitted ? '是' : '否' }}
+            </span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120">
+        <el-table-column label="操作" width="120" align="center" header-align="center">
           <template #default="scope">
-            <el-button :disabled="!canEnter(scope.row)" type="primary" round size="small" @click="start(scope.row)">
+            <button
+              :disabled="!canEnter(scope.row)"
+              type="button"
+              class="enter-action"
+              @click="start(scope.row)"
+            >
               进入考试
-            </el-button>
+            </button>
           </template>
         </el-table-column>
+        <template #empty>
+          <div class="exam-empty">没有匹配的考试</div>
+        </template>
       </el-table>
-    </el-card>
+    </section>
 
     <PreExamCheckDialog
       v-model="checkVisible"
@@ -59,18 +92,36 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { studentExamsApi } from '../../api'
 import { formatDateTime, parseDateTime } from '../../utils/datetime'
 import PreExamCheckDialog from './PreExamCheckDialog.vue'
+import { useAuthStore } from '../../stores/auth'
 
 const router = useRouter()
+const auth = useAuthStore()
 const exams = ref([])
+const keyword = ref('')
+const filterKey = ref('all')
 const checkVisible = ref(false)
 const pendingExam = ref(null)
 const disallowedStatuses = new Set(['FINISHED', 'TERMINATED'])
+const filters = [
+  { key: 'all', label: '全部' },
+  { key: 'available', label: '可进入' },
+  { key: 'ongoing', label: '进行中' },
+  { key: 'finished', label: '已结束' },
+  { key: 'unsubmitted', label: '未提交' }
+]
+const greetingText = computed(() => {
+  const hour = new Date().getHours()
+  if (hour < 6) return '夜深了'
+  if (hour < 12) return '上午好'
+  if (hour < 18) return '下午好'
+  return '晚上好'
+})
 
 const load = async () => {
   exams.value = await studentExamsApi()
@@ -84,6 +135,19 @@ const canEnter = (exam) => {
   if (endTime && endTime.getTime() <= Date.now()) return false
   return true
 }
+
+const filteredExams = computed(() => {
+  const query = keyword.value.trim().toLowerCase()
+  return exams.value.filter((exam) => {
+    const haystack = `${exam.subjectName || ''} ${exam.name || ''} ${exam.status || ''}`.toLowerCase()
+    if (query && !haystack.includes(query)) return false
+    if (filterKey.value === 'available') return canEnter(exam)
+    if (filterKey.value === 'ongoing') return exam.status === 'ONGOING' || exam.status === 'PUBLISHED'
+    if (filterKey.value === 'finished') return disallowedStatuses.has(exam.status)
+    if (filterKey.value === 'unsubmitted') return !exam.submitted
+    return true
+  })
+})
 
 const start = (row) => {
   if (!canEnter(row)) return
@@ -109,13 +173,13 @@ const enterPendingExam = async (handoff) => {
   }
 }
 
-const getStatusType = (status) => {
+const statusTone = (status) => {
   switch (status) {
-    case 'ONGOING': return 'success'
-    case 'PUBLISHED': return 'warning'
-    case 'FINISHED': return 'info'
-    case 'TERMINATED': return 'danger'
-    default: return 'info'
+    case 'ONGOING': return 'is-live'
+    case 'PUBLISHED': return 'is-ready'
+    case 'TERMINATED': return 'is-ended-danger'
+    case 'FINISHED': return 'is-ended'
+    default: return 'is-ended'
   }
 }
 
@@ -132,23 +196,171 @@ onMounted(load)
 </script>
 
 <style scoped>
-.exam-list-container {
-  padding: 10px;
+.student-exams-page {
+  display: grid;
+  gap: 22px;
 }
 
-.header-content {
+.student-hero {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  text-align: center;
+}
+
+.student-hero__plan {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 13px;
+  border-radius: 10px;
+  background: var(--student-soft, #eee8df);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.student-hero h1 {
+  margin: 26px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  color: var(--text-main);
+  font-family: Georgia, 'Times New Roman', 'Songti SC', serif;
+  font-size: clamp(32px, 3vw, 46px);
+  font-weight: 500;
+  line-height: 1.08;
+}
+
+.student-hero h1 span:last-child {
+  word-spacing: 0.04em;
+}
+
+.hero-burst {
+  flex: 0 0 auto;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background:
+    repeating-conic-gradient(
+      from 0deg,
+      var(--student-accent, #d97757) 0deg 9deg,
+      transparent 9deg 18deg
+    );
+  mask: radial-gradient(circle, transparent 0 33%, #000 34% 100%);
+}
+
+.exam-command-panel {
+  width: min(560px, 100%);
+  margin-top: 28px;
+  padding: 14px 22px;
+  border: 1px solid var(--student-line, #e7dfd3);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 16px 42px rgba(54, 43, 33, 0.06);
+}
+
+.exam-search {
+  width: 100%;
+}
+
+.exam-search :deep(.el-input__wrapper) {
+  min-height: 44px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.exam-search :deep(.el-input__inner) {
+  color: var(--text-main);
+  font-size: 16px;
+}
+
+.exam-search :deep(.el-input__inner::placeholder) {
+  color: #a7a19a;
+}
+
+.exam-search :deep(.el-input__suffix) {
+  display: none;
+}
+
+.exam-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.exam-filters {
+  margin-top: 14px;
+}
+
+.filter-pill {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--student-line, #e7dfd3);
+  border-radius: 10px;
+  background: #fffdfa;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.filter-pill.is-active,
+.filter-pill:hover {
+  color: var(--text-main);
+  background: var(--student-soft, #eee8df);
+}
+
+.exam-panel {
+  padding: 26px 28px 24px;
+  border: 1px solid var(--student-line, #e7dfd3);
+  border-radius: 18px;
+  background: #f5efe6;
+  box-shadow: 0 18px 44px rgba(54, 43, 33, 0.045);
+}
+
+.exam-panel__header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 22px;
 }
 
-.header {
-  font-size: 20px;
+.exam-panel__header p {
+  margin: 0 0 5px;
+  color: var(--student-accent, #d97757);
+  font-size: 13px;
   font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--brand);
+}
+
+.exam-panel__header h2 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.refresh-action {
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid #ded3c4;
+  border-radius: 999px;
+  background: #fffdfa;
+  color: #615950;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.refresh-action:hover {
+  background: #f5efe7;
+  border-color: #d2c5b5;
 }
 
 .course-name {
@@ -161,17 +373,161 @@ onMounted(load)
   font-size: 13px;
 }
 
-.custom-table {
-  border-radius: var(--radius-sm);
+.student-table {
+  border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+  --el-table-header-bg-color: #ebe3d7;
+  --el-table-header-text-color: var(--text-main);
+  --el-table-row-hover-bg-color: #f0e8dc;
+  --el-table-border-color: #ddd2c2;
+  --el-table-text-color: var(--text-main);
+  --el-table-tr-bg-color: #f8f3eb;
 }
 
-/* Make table transparent for glassmorphism */
-:deep(.el-table), :deep(.el-table__expanded-cell) {
+.student-table :deep(.el-table__cell) {
+  padding: 13px 0;
+}
+
+.student-table :deep(.el-table),
+.student-table :deep(.el-table__expanded-cell) {
   background-color: transparent !important;
 }
-:deep(.el-table tr), :deep(.el-table td.el-table__cell) {
-  background-color: transparent !important;
+
+.student-table :deep(.el-table th.el-table__cell) {
+  font-weight: 700;
+}
+
+.student-table :deep(.el-table tr),
+.student-table :deep(.el-table td.el-table__cell) {
+  background-color: #f8f3eb !important;
+  border-bottom-color: #ddd2c2;
+}
+
+.student-table :deep(.el-table__empty-block),
+.student-table :deep(.el-table__empty-text) {
+  background-color: #f8f3eb !important;
+}
+
+.student-table :deep(.el-table__empty-block) {
+  min-height: 160px;
+}
+
+.student-table :deep(.el-table tr:hover > td.el-table__cell) {
+  background-color: #f0e8dc !important;
+}
+
+.student-table :deep(.el-table::before) {
+  display: none;
+}
+
+.status-chip,
+.policy-chip,
+.submit-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 25px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.status-chip {
+  min-width: 86px;
+  border: 1px solid #dedbd6;
+  background: #f4f2ee;
+  color: #78726c;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.status-chip.is-live {
+  border-color: #d7e4cc;
+  background: #f3f8ef;
+  color: #617c49;
+}
+
+.status-chip.is-ready {
+  border-color: #ead9bc;
+  background: #fff8eb;
+  color: #8a6a35;
+}
+
+.status-chip.is-ended-danger {
+  border-color: #edc8c1;
+  background: #fff4f1;
+  color: #b65a48;
+}
+
+.policy-chip {
+  border: 1px solid #dacfc0;
+  background: #fbf7f0;
+  color: #6c6258;
+}
+
+.submit-chip.is-submitted {
+  border: 1px solid #d7e3c8;
+  background: #f4f7ee;
+  color: #2f5e2f;
+  font-weight: 650;
+}
+
+.submit-chip.is-pending {
+  border: 1px solid #dedbd6;
+  background: #f6f4f0;
+  color: #655e57;
+  font-weight: 650;
+}
+
+.enter-action {
+  min-width: 86px;
+  height: 32px;
+  padding: 0 15px;
+  border: 1px solid #d6c7b6;
+  border-radius: 999px;
+  background: #efe3d7;
+  color: #5a4f45;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.enter-action:hover:not(:disabled) {
+  border-color: #d79a82;
+  background: #e6d2c5;
+  color: var(--student-accent-dark, #a84930);
+}
+
+.enter-action:disabled {
+  cursor: not-allowed;
+  border-color: #d8cfc4;
+  background: transparent;
+  color: #6b5f54;
+  opacity: 1;
+}
+
+.exam-empty {
+  padding: 28px 0;
+  color: var(--text-muted);
+}
+
+@media (max-width: 760px) {
+  .student-hero h1 {
+    align-items: flex-start;
+    font-size: 34px;
+  }
+
+  .exam-panel {
+    padding: 16px;
+  }
+
+  .exam-panel__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 </style>
