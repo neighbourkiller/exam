@@ -1,74 +1,136 @@
 <template>
   <div :class="['layout-root', { 'layout-root--exam': isExamFullscreen }]">
-    <header v-if="!isExamFullscreen" class="top-nav glass-card">
-      <div class="nav-container">
-        <div class="logo">
-          <span class="logo-icon">✨</span>
-          <span class="logo-text">Exam MVP</span>
-        </div>
-
-        <el-menu 
-          :default-active="active" 
-          mode="horizontal" 
-          @select="onSelect" 
-          class="top-menu" 
-          :ellipsis="false"
-        >
-          <!-- 学生端菜单 -->
-          <template v-if="isStudent">
-            <el-menu-item index="/student/exams">我的考试</el-menu-item>
-            <el-menu-item index="/student/environment-check">环境检测</el-menu-item>
-            <el-menu-item index="/student/results">考试结果</el-menu-item>
-          </template>
-
-          <!-- 教师端菜单 -->
-          <el-sub-menu v-if="isTeacher" index="teacher">
-            <template #title>教师工作台</template>
-            <el-menu-item index="/teacher/exams">考试发布</el-menu-item>
-            <el-menu-item index="/teacher/papers">组卷管理</el-menu-item>
-            <el-menu-item index="/teacher/questions">题库管理</el-menu-item>
-            <el-menu-item index="/teacher/proctoring">监考中心</el-menu-item>
-            <el-menu-item index="/teacher/grading">主观阅卷</el-menu-item>
-            <el-menu-item index="/teacher/classes">班级管理</el-menu-item>
-            <el-menu-item index="/teacher/analytics">数据看板</el-menu-item>
-          </el-sub-menu>
-
-          <!-- 管理端菜单 -->
-          <el-sub-menu v-if="isAdmin" index="admin">
-            <template #title>系统管理</template>
-            <el-menu-item index="/admin/users">用户管理</el-menu-item>
-            <el-menu-item index="/admin/courses">课程管理</el-menu-item>
-            <el-menu-item index="/admin/teaching-classes">教学班管理</el-menu-item>
-            <el-menu-item index="/admin/bulk-import">批量导入</el-menu-item>
-            <el-menu-item index="/admin/exam-monitor">考试监控</el-menu-item>
-            <el-menu-item index="/admin/audit-logs">操作日志</el-menu-item>
-          </el-sub-menu>
-        </el-menu>
-
-        <div class="user-actions">
-          <div class="user-info">
-            <div class="avatar">{{ auth.username?.charAt(0)?.toUpperCase() || 'U' }}</div>
-            <span class="username">{{ auth.username || '未登录' }}</span>
+    <template v-if="!isExamFullscreen && isStudent">
+      <div class="student-shell">
+        <aside class="student-sidebar">
+          <div class="student-brand">
+            <span class="student-brand__mark">E</span>
+            <span>Exam MVP</span>
           </div>
-          <el-button size="small" type="danger" plain round @click="logout" class="logout-btn">退出</el-button>
-        </div>
-      </div>
-    </header>
 
-    <main :class="['content', { 'content--exam': isExamFullscreen }]">
-      <div v-if="!isExamFullscreen" class="content-wrapper">
-        <router-view v-slot="{ Component }">
+          <nav class="student-nav" aria-label="学生端导航">
+            <button
+              v-for="item in studentNavItems"
+              :key="item.index"
+              type="button"
+              :class="['student-nav__item', { 'is-active': active === item.index }]"
+              @click="onSelect(item.index)"
+            >
+              <svg class="student-nav__icon" viewBox="0 0 24 24" aria-hidden="true">
+                <template v-if="item.icon === 'clipboard'">
+                  <path d="M9 4.5h6" />
+                  <path d="M9.5 3.5h5a1.5 1.5 0 0 1 1.5 1.5v1H8V5a1.5 1.5 0 0 1 1.5-1.5Z" />
+                  <path d="M8 5.5H6.8A2.8 2.8 0 0 0 4 8.3v9.9A2.8 2.8 0 0 0 6.8 21h10.4a2.8 2.8 0 0 0 2.8-2.8V8.3a2.8 2.8 0 0 0-2.8-2.8H16" />
+                  <path d="m9 13 2 2 4-4" />
+                </template>
+                <template v-else-if="item.icon === 'shield'">
+                  <path d="M12 3.5 19 6v5.4c0 4.2-2.7 7.4-7 9.1-4.3-1.7-7-4.9-7-9.1V6l7-2.5Z" />
+                  <path d="m9.5 12 1.7 1.7 3.4-3.4" />
+                </template>
+                <template v-else>
+                  <path d="M5 19V13" />
+                  <path d="M10 19V9" />
+                  <path d="M15 19V5" />
+                  <path d="M20 19V11" />
+                  <path d="M4 19h17" />
+                </template>
+              </svg>
+              <span>{{ item.label }}</span>
+            </button>
+          </nav>
+
+          <div class="student-sidebar__footer">
+            <div class="student-profile">
+              <div class="student-profile__avatar">{{ userInitial }}</div>
+              <div>
+                <strong>{{ auth.username || '未登录' }}</strong>
+                <span>学生端</span>
+              </div>
+            </div>
+            <button type="button" class="student-logout" @click="logout">退出</button>
+          </div>
+        </aside>
+
+        <main class="student-main">
+          <div class="student-main__bar">
+            <span>学生工作台</span>
+            <span>{{ auth.username || 'student' }}</span>
+          </div>
+          <div class="student-content-wrapper">
+            <router-view v-slot="{ Component }">
+              <transition name="fade" mode="out-in">
+                <component :is="Component" />
+              </transition>
+            </router-view>
+          </div>
+        </main>
+      </div>
+    </template>
+
+    <template v-else>
+      <header v-if="!isExamFullscreen" class="top-nav glass-card">
+        <div class="nav-container">
+          <div class="logo">
+            <span class="logo-icon">✨</span>
+            <span class="logo-text">Exam MVP</span>
+          </div>
+
+          <el-menu 
+            :default-active="active" 
+            mode="horizontal" 
+            @select="onSelect" 
+            class="top-menu" 
+            :ellipsis="false"
+          >
+            <!-- 教师端菜单 -->
+            <el-sub-menu v-if="isTeacher" index="teacher">
+              <template #title>教师工作台</template>
+              <el-menu-item index="/teacher/exams">考试发布</el-menu-item>
+              <el-menu-item index="/teacher/papers">组卷管理</el-menu-item>
+              <el-menu-item index="/teacher/questions">题库管理</el-menu-item>
+              <el-menu-item index="/teacher/proctoring">监考中心</el-menu-item>
+              <el-menu-item index="/teacher/grading">主观阅卷</el-menu-item>
+              <el-menu-item index="/teacher/classes">班级管理</el-menu-item>
+              <el-menu-item index="/teacher/analytics">数据看板</el-menu-item>
+            </el-sub-menu>
+
+            <!-- 管理端菜单 -->
+            <el-sub-menu v-if="isAdmin" index="admin">
+              <template #title>系统管理</template>
+              <el-menu-item index="/admin/users">用户管理</el-menu-item>
+              <el-menu-item index="/admin/courses">课程管理</el-menu-item>
+              <el-menu-item index="/admin/teaching-classes">教学班管理</el-menu-item>
+              <el-menu-item index="/admin/bulk-import">批量导入</el-menu-item>
+              <el-menu-item index="/admin/exam-monitor">考试监控</el-menu-item>
+              <el-menu-item index="/admin/audit-logs">操作日志</el-menu-item>
+            </el-sub-menu>
+          </el-menu>
+
+          <div class="user-actions">
+            <div class="user-info">
+              <div class="avatar">{{ userInitial }}</div>
+              <span class="username">{{ auth.username || '未登录' }}</span>
+            </div>
+            <el-button size="small" type="danger" plain round @click="logout" class="logout-btn">退出</el-button>
+          </div>
+        </div>
+      </header>
+
+      <main :class="['content', { 'content--exam': isExamFullscreen }]">
+        <div v-if="!isExamFullscreen" class="content-wrapper">
+          <router-view v-slot="{ Component }">
+            <transition name="fade" mode="out-in">
+              <component :is="Component" />
+            </transition>
+          </router-view>
+        </div>
+        <router-view v-else v-slot="{ Component }">
           <transition name="fade" mode="out-in">
             <component :is="Component" />
           </transition>
         </router-view>
-      </div>
-      <router-view v-else v-slot="{ Component }">
-        <transition name="fade" mode="out-in">
-          <component :is="Component" />
-        </transition>
-      </router-view>
-    </main>
+      </main>
+    </template>
   </div>
 </template>
 
@@ -87,6 +149,12 @@ const isExamFullscreen = computed(() => Boolean(route.meta?.examFullscreen))
 const isAdmin = computed(() => auth.roles.includes('ADMIN'))
 const isTeacher = computed(() => auth.roles.includes('TEACHER') || auth.roles.includes('ADMIN'))
 const isStudent = computed(() => auth.roles.includes('STUDENT'))
+const userInitial = computed(() => auth.username?.charAt(0)?.toUpperCase() || 'U')
+const studentNavItems = [
+  { index: '/student/exams', label: '我的考试', icon: 'clipboard' },
+  { index: '/student/environment-check', label: '环境检测', icon: 'shield' },
+  { index: '/student/results', label: '考试结果', icon: 'chart' }
+]
 
 const onSelect = (index) => {
   router.push(index)
@@ -114,6 +182,210 @@ const logout = async () => {
 
 .layout-root--exam {
   display: block;
+}
+
+.student-shell {
+  --student-bg: #f8f5ef;
+  --student-panel: #fcfaf6;
+  --student-panel-strong: #ffffff;
+  --student-line: #e5ddd0;
+  --student-text: #2f2d2a;
+  --student-muted: #746f68;
+  --student-accent: #cf6b4e;
+  --student-accent-dark: #9d4830;
+  --student-soft: #eee7dc;
+  --brand: var(--student-accent);
+  --brand-light: #f4ddd2;
+  --brand-hover: var(--student-accent-dark);
+  --bg-main: var(--student-bg);
+  --bg-card: var(--student-panel-strong);
+  --text-main: var(--student-text);
+  --text-muted: var(--student-muted);
+  --shadow-soft: 0 16px 40px rgba(54, 43, 33, 0.07);
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--student-bg);
+  color: var(--student-text);
+}
+
+.student-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--student-line);
+  background: rgba(252, 250, 246, 0.92);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.student-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 24px 30px;
+  color: var(--student-text);
+  font-family: Georgia, 'Times New Roman', 'Songti SC', serif;
+  font-size: 25px;
+  font-weight: 600;
+}
+
+.student-brand__mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--student-text);
+  color: var(--student-bg);
+  font: 700 15px/1 Georgia, serif;
+}
+
+.student-nav {
+  display: grid;
+  gap: 4px;
+  padding: 0 12px;
+}
+
+.student-nav__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 14px 0 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--student-muted);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.student-nav__item:hover {
+  color: var(--student-text);
+  background: rgba(47, 45, 42, 0.035);
+}
+
+.student-nav__item.is-active {
+  color: var(--student-text);
+  background: #f1ece4;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.student-nav__item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--student-accent);
+}
+
+.student-nav__icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  color: #7b756f;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.student-nav__item.is-active .student-nav__icon {
+  color: var(--student-accent);
+}
+
+.student-sidebar__footer {
+  margin-top: auto;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-top: 1px solid var(--student-line);
+}
+
+.student-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.student-profile__avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f2ede5;
+  border: 1px solid #d9cec0;
+  color: #15130f;
+  font-weight: 700;
+}
+
+.student-profile strong,
+.student-profile span {
+  display: block;
+}
+
+.student-profile strong {
+  font-size: 14px;
+  color: var(--student-text);
+}
+
+.student-profile span {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--student-muted);
+}
+
+.student-logout {
+  height: 40px;
+  border: 1px solid #efc4b8;
+  border-radius: 12px;
+  background: #fff7f2;
+  color: var(--student-accent-dark);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.student-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.student-main__bar {
+  height: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  padding: 0 32px;
+  overflow: hidden;
+  color: var(--student-muted);
+  font-size: 13px;
+}
+
+.student-content-wrapper {
+  width: min(1200px, calc(100% - 64px));
+  margin: 0 auto;
+  padding: 28px 0 56px;
 }
 
 .top-nav {
@@ -247,6 +519,43 @@ const logout = async () => {
 }
 
 @media (max-width: 768px) {
+  .student-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .student-sidebar {
+    position: static;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--student-line);
+  }
+
+  .student-brand {
+    padding: 16px;
+  }
+
+  .student-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding-top: 0;
+  }
+
+  .student-nav__item {
+    justify-content: center;
+    padding: 0 8px;
+    font-size: 13px;
+  }
+
+  .student-nav__icon,
+  .student-sidebar__footer,
+  .student-main__bar {
+    display: none;
+  }
+
+  .student-content-wrapper {
+    width: calc(100% - 32px);
+    padding: 28px 0 36px;
+  }
+
   .nav-container {
     padding: 0 16px;
     gap: 12px;

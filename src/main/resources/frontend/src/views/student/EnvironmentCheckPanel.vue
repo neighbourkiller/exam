@@ -106,7 +106,11 @@ const statusText = (status) => {
 <style scoped>
 .environment-check-panel {
   display: grid;
-  gap: 18px;
+  gap: 20px;
+}
+
+.environment-check-panel :deep(.el-progress-bar__outer) {
+  background-color: var(--student-soft, #eee8df);
 }
 
 .check-list {
@@ -115,25 +119,26 @@ const statusText = (status) => {
 }
 
 .check-item {
-  padding: 14px 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: var(--radius-sm);
-  background: #ffffff;
+  padding: 16px 18px;
+  border: 1px solid var(--student-line, #e7dfd3);
+  border-radius: 14px;
+  background: #fffdfa;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
 .check-item--passed {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
+  border-color: #c9dfc9;
+  background: #f5faf3;
 }
 
 .check-item--warning {
-  border-color: #fed7aa;
-  background: #fff7ed;
+  border-color: #e8c9a5;
+  background: #fff8ef;
 }
 
 .check-item--failed {
-  border-color: #fecaca;
-  background: #fef2f2;
+  border-color: #ecc0b6;
+  background: #fff5f2;
 }
 
 .check-item__head {
