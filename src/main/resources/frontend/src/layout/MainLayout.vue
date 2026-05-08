@@ -5,7 +5,7 @@
         <aside class="student-sidebar">
           <div class="student-brand">
             <span class="student-brand__mark">E</span>
-            <span>Exam MVP</span>
+            <span>Exam</span>
           </div>
 
           <nav class="student-nav" aria-label="学生端导航">
@@ -72,7 +72,7 @@
         <div class="nav-container">
           <div class="logo">
             <span class="logo-icon">✨</span>
-            <span class="logo-text">Exam MVP</span>
+            <span class="logo-text">Exam</span>
           </div>
 
           <el-menu 

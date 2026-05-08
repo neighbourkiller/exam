@@ -104,21 +104,6 @@
               </el-button>
             </div>
           </el-form>
-
-          <div v-if="accountHints.length" class="quick-login">
-            <span class="divider-text">测试账号快捷登录</span>
-            <div class="account-hints">
-              <button
-                v-for="account in accountHints"
-                :key="account.label"
-                type="button"
-                class="hint-tag"
-                @click="fillAccount(account)"
-              >
-                {{ account.label }}
-              </button>
-            </div>
-          </div>
         </div>
       </section>
     </div>
@@ -135,23 +120,11 @@ import { useAuthStore } from '../../stores/auth'
 const router = useRouter()
 const auth = useAuthStore()
 const loading = ref(false)
-const isDev = import.meta.env.DEV
 
 const form = reactive({
   username: '',
   password: ''
 })
-
-const accountHints = isDev ? [
-  { label: '管理员', username: 'admin' },
-  { label: '教师', username: 'teacher1' },
-  { label: '学生', username: 'student1' }
-] : []
-
-const fillAccount = (account) => {
-  form.username = account.username
-  form.password = ''
-}
 
 const onSubmit = async () => {
   loading.value = true
@@ -527,52 +500,6 @@ const blob3Style = computed(() => {
 
 .login-btn:active {
   transform: translateY(0) !important;
-}
-
-/* 快捷登录 */
-.quick-login {
-  text-align: center;
-}
-
-.divider-text {
-  font-size: 12px;
-  color: #64748b;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.divider-text::before,
-.divider-text::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.account-hints {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.hint-tag {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  color: #cbd5e1;
-  font-size: 13px;
-  padding: 8px 16px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.hint-tag:hover {
-  background: rgba(59, 130, 246, 0.1);
-  border-color: rgba(59, 130, 246, 0.4);
-  color: #60a5fa;
 }
 
 /* 响应式调整 */
