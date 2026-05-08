@@ -2,9 +2,9 @@
   <div class="proctoring-shell">
     <section class="proctoring-hero">
       <div>
-        <p class="proctoring-hero__eyebrow">Exam Proctoring</p>
+        <p class="proctoring-hero__eyebrow">监考工作台</p>
         <h1>监考中心</h1>
-        <p class="proctoring-hero__desc">统一查看考试中的异常行为、快照健康度与考后风险报告，帮助老师快速定位高风险学生。</p>
+        <p class="proctoring-hero__desc">集中处理考试实时异常、考后风险复核与证据核查。</p>
       </div>
       <div class="proctoring-hero__meta">
         <div class="meta-pill">
@@ -25,50 +25,61 @@
       </el-tabs>
 
       <div class="toolbar-row">
-        <el-select v-model="selectedExamId" placeholder="请选择考试" class="toolbar-select" filterable>
-          <el-option
-            v-for="exam in currentExamOptions"
-            :key="exam.examId"
-            :label="`${exam.name} (${exam.status})`"
-            :value="String(exam.examId)"
-          />
-        </el-select>
-        <el-button @click="refreshAll" :loading="loading">刷新</el-button>
+        <div class="exam-picker">
+          <span>考试</span>
+          <el-select v-model="selectedExamId" placeholder="请选择考试" class="toolbar-select" filterable>
+            <el-option
+              v-for="exam in currentExamOptions"
+              :key="exam.examId"
+              :label="`${exam.name} (${exam.status})`"
+              :value="String(exam.examId)"
+            />
+          </el-select>
+        </div>
+        <el-button type="primary" plain @click="refreshAll" :loading="loading">刷新数据</el-button>
       </div>
     </section>
 
     <section v-if="overview" class="summary-grid">
-      <article class="summary-card">
+      <article class="summary-card summary-card--total">
         <span>应监考人数</span>
         <strong>{{ overview.totalStudents }}</strong>
+        <small>本场考试考生总数</small>
       </article>
-      <article class="summary-card">
+      <article class="summary-card summary-card--online">
         <span>当前在线</span>
         <strong>{{ overview.answeringStudents }}</strong>
+        <small>在线率 {{ onlineRate }}%</small>
       </article>
       <article class="summary-card summary-card--warn">
         <span>高风险人数</span>
         <strong>{{ overview.highRiskCount }}</strong>
+        <small>优先核查对象</small>
       </article>
-      <article class="summary-card">
+      <article class="summary-card summary-card--snapshot">
         <span>快照异常</span>
         <strong>{{ overview.snapshotAlertCount }}</strong>
+        <small>含缺失或延迟快照</small>
       </article>
-      <article class="summary-card">
+      <article class="summary-card summary-card--review">
         <span>待核查</span>
         <strong>{{ overview.pendingReviewDispositionCount || 0 }}</strong>
+        <small>需要教师处置</small>
       </article>
-      <article class="summary-card summary-card--warn">
+      <article class="summary-card summary-card--confirmed">
         <span>已确认</span>
         <strong>{{ overview.confirmedDispositionCount || 0 }}</strong>
+        <small>确认违规或异常</small>
       </article>
-      <article class="summary-card">
+      <article class="summary-card summary-card--ok">
         <span>误报</span>
         <strong>{{ overview.falsePositiveDispositionCount || 0 }}</strong>
+        <small>已排除风险</small>
       </article>
-      <article class="summary-card">
+      <article class="summary-card summary-card--closed">
         <span>已关闭</span>
         <strong>{{ overview.closedDispositionCount || 0 }}</strong>
+        <small>处置流程结束</small>
       </article>
     </section>
 
@@ -77,16 +88,16 @@
         <div class="panel-header">
           <div>
             <h2>{{ activeTab === 'live' ? '学生风险列表' : '异常学生清单' }}</h2>
-            <p>按风险分倒序，支持按班级、风险等级和姓名筛选。</p>
+            <p>共 {{ students.length }} 人，当前筛选 {{ filteredStudents.length }} 人。</p>
           </div>
           <div class="filter-row">
             <el-select v-model="classFilter" clearable placeholder="班级筛选" class="filter-item">
               <el-option v-for="name in classOptions" :key="name" :label="name" :value="name" />
             </el-select>
             <el-select v-model="riskFilter" clearable placeholder="风险等级" class="filter-item">
-              <el-option label="LOW" value="LOW" />
-              <el-option label="MEDIUM" value="MEDIUM" />
-              <el-option label="HIGH" value="HIGH" />
+              <el-option label="低风险" value="LOW" />
+              <el-option label="中风险" value="MEDIUM" />
+              <el-option label="高风险" value="HIGH" />
             </el-select>
             <el-select v-model="dispositionFilter" clearable placeholder="处置状态" class="filter-item">
               <el-option
@@ -100,17 +111,36 @@
           </div>
         </div>
 
-        <el-table :data="filteredStudents" stripe>
-          <el-table-column prop="studentName" label="学生" min-width="130" />
+        <el-table :data="filteredStudents" stripe :row-class-name="studentRowClassName" class="student-table">
+          <el-table-column label="学生" min-width="150">
+            <template #default="{ row }">
+              <div class="student-cell">
+                <strong>{{ row.studentName || '--' }}</strong>
+                <span>{{ row.username || '账号未返回' }}</span>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column label="班级" min-width="140">
             <template #default="{ row }">{{ formatClassNames(row.classNames) }}</template>
           </el-table-column>
           <el-table-column label="风险等级" width="110">
             <template #default="{ row }">
-              <el-tag :type="riskTagType(row.riskLevel)">{{ row.riskLevel }}</el-tag>
+              <el-tag :type="riskTagType(row.riskLevel)" effect="light">{{ riskLevelLabel(row.riskLevel) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="riskScore" label="风险分" width="90" />
+          <el-table-column label="风险分" width="150">
+            <template #default="{ row }">
+              <div class="risk-score-cell">
+                <strong>{{ row.riskScore || 0 }}</strong>
+                <el-progress
+                  :percentage="riskScorePercent(row.riskScore)"
+                  :stroke-width="6"
+                  :show-text="false"
+                  :status="riskProgressStatus(row.riskLevel)"
+                />
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column label="处置状态" width="110">
             <template #default="{ row }">
               <el-tag :type="dispositionTagType(row.disposition?.status)" size="small">
@@ -130,8 +160,10 @@
           </el-table-column>
           <el-table-column label="状态" width="120">
             <template #default="{ row }">
-              <el-tag size="small" :type="row.answering ? 'success' : 'info'">{{ row.answering ? '答题中' : '未在线' }}</el-tag>
-              <el-tag v-if="row.snapshotAlert" size="small" type="warning" class="state-tag">快照异常</el-tag>
+              <div class="state-tags">
+                <el-tag size="small" :type="row.answering ? 'success' : 'info'">{{ row.answering ? '答题中' : '未在线' }}</el-tag>
+                <el-tag v-if="row.snapshotAlert" size="small" type="warning">快照异常</el-tag>
+              </div>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="110">
@@ -153,11 +185,14 @@
         <div v-if="activeTab === 'live'" class="event-list">
           <div v-for="event in overview.recentEvents" :key="`${event.studentId}-${event.eventType}-${event.eventTime}`" class="event-item">
             <div class="event-item__head">
-              <strong>{{ event.studentName }}</strong>
+              <div class="event-title">
+                <i :class="eventSeverityClass(event.eventType)" />
+                <strong>{{ event.studentName }}</strong>
+              </div>
               <span>{{ formatDateTime(event.eventTime) }}</span>
             </div>
             <div class="event-item__body">
-              <span>{{ formatEventType(event.eventType) }}</span>
+              <el-tag size="small" :type="eventTagType(event.eventType)" effect="light">{{ formatEventType(event.eventType) }}</el-tag>
               <span>{{ event.durationMs ? formatDuration(event.durationMs) : '瞬时事件' }}</span>
             </div>
           </div>
@@ -205,7 +240,13 @@
 
     <el-empty v-else description="请选择考试以查看监考信息" />
 
-    <el-drawer v-model="drawerVisible" title="学生监考详情" size="42%">
+    <el-drawer v-model="drawerVisible" size="560px" class="proctoring-drawer">
+      <template #header>
+        <div class="drawer-title">
+          <span>学生监考详情</span>
+          <strong v-if="timeline">{{ timeline.studentName }}</strong>
+        </div>
+      </template>
       <template v-if="timeline">
         <div v-loading="timelineLoading" class="drawer-content">
         <div class="timeline-summary">
@@ -215,7 +256,7 @@
           </div>
           <div class="timeline-pill">
             <span>风险等级</span>
-            <strong>{{ timeline.riskLevel }} / {{ timeline.riskScore }}</strong>
+            <strong>{{ riskLevelLabel(timeline.riskLevel) }} / {{ timeline.riskScore }}</strong>
           </div>
           <div class="timeline-pill">
             <span>快照状态</span>
@@ -390,6 +431,13 @@ const filteredStudents = computed(() =>
 const highRiskStudents = computed(() => students.value.filter((item) => item.riskLevel === 'HIGH'))
 const longOffscreenStudents = computed(() => students.value.filter((item) => item.longOffscreen))
 const snapshotAlertStudents = computed(() => students.value.filter((item) => item.snapshotAlert))
+const onlineRate = computed(() => {
+  const total = Number(overview.value?.totalStudents || 0)
+  if (!total) {
+    return 0
+  }
+  return Math.round((Number(overview.value?.answeringStudents || 0) / total) * 100)
+})
 
 const EVENT_TYPE_MAP = {
   WINDOW_BLUR: '窗口失去焦点',
@@ -412,6 +460,29 @@ const EVENT_TYPE_MAP = {
   NAVIGATION_LEAVE_ATTEMPT: '尝试离开考试页'
 }
 
+const HIGH_RISK_EVENTS = new Set([
+  'FULLSCREEN_EXIT',
+  'CAMERA_START_FAILED',
+  'CAMERA_STREAM_ENDED',
+  'MULTI_MONITOR_DETECTED',
+  'SCREEN_CHECK_UNAVAILABLE',
+  'SCREEN_SHARE_START_FAILED',
+  'SCREEN_SHARE_ENDED',
+  'NAVIGATION_LEAVE_ATTEMPT'
+])
+
+const MEDIUM_RISK_EVENTS = new Set([
+  'WINDOW_BLUR',
+  'TAB_HIDDEN',
+  'COPY_ATTEMPT',
+  'PASTE_ATTEMPT',
+  'CUT_ATTEMPT',
+  'CONTEXT_MENU',
+  'LONG_INACTIVITY',
+  'CAMERA_TRACK_MUTED',
+  'CAMERA_FRAME_DARK'
+])
+
 const formatEventType = (type) => EVENT_TYPE_MAP[type] || type || '--'
 
 const dispositionStatus = (item) => item?.disposition?.status || 'PENDING_REVIEW'
@@ -428,6 +499,35 @@ const riskTagType = (level) => {
   if (level === 'HIGH') return 'danger'
   if (level === 'MEDIUM') return 'warning'
   return 'success'
+}
+
+const riskLevelLabel = (level) => {
+  if (level === 'HIGH') return '高风险'
+  if (level === 'MEDIUM') return '中风险'
+  if (level === 'LOW') return '低风险'
+  return level || '--'
+}
+
+const riskProgressStatus = (level) => {
+  if (level === 'HIGH') return 'exception'
+  if (level === 'MEDIUM') return 'warning'
+  return 'success'
+}
+
+const riskScorePercent = (score) => Math.max(0, Math.min(100, Number(score || 0)))
+
+const eventTagType = (eventType) => {
+  if (HIGH_RISK_EVENTS.has(eventType)) return 'danger'
+  if (MEDIUM_RISK_EVENTS.has(eventType)) return 'warning'
+  return 'info'
+}
+
+const eventSeverityClass = (eventType) => `event-dot event-dot--${eventTagType(eventType)}`
+
+const studentRowClassName = ({ row }) => {
+  if (row.riskLevel === 'HIGH') return 'student-row--high'
+  if (row.riskLevel === 'MEDIUM') return 'student-row--medium'
+  return ''
 }
 
 const formatClassNames = (value) => (Array.isArray(value) && value.length ? value.join('、') : '--')
@@ -656,76 +756,92 @@ onBeforeUnmount(() => {
 <style scoped>
 .proctoring-shell {
   display: grid;
-  gap: 18px;
+  gap: 16px;
+  color: #0f172a;
 }
 
 .proctoring-hero {
   display: flex;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 24px;
-  padding: 24px 28px;
-  border-radius: 28px;
-  color: #f8fffd;
-  background:
-    radial-gradient(circle at top right, rgba(45, 212, 191, 0.28), transparent 30%),
-    linear-gradient(135deg, #083344 0%, #115e59 46%, #164e63 100%);
+  gap: 20px;
+  padding: 22px 24px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef6f4 52%, #fff7ed 100%);
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
 }
 
 .proctoring-hero__eyebrow {
   margin: 0 0 8px;
   font-size: 12px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: rgba(248, 255, 253, 0.72);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #0f766e;
 }
 
 .proctoring-hero h1 {
   margin: 0;
-  font-size: 36px;
+  font-size: 30px;
+  letter-spacing: 0;
 }
 
 .proctoring-hero__desc {
   max-width: 720px;
-  margin: 10px 0 0;
-  color: rgba(248, 255, 253, 0.84);
+  margin: 8px 0 0;
+  color: #475569;
 }
 
 .proctoring-hero__meta {
-  display: grid;
-  gap: 12px;
-  min-width: 240px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  max-width: 520px;
+  flex-wrap: wrap;
 }
 
 .meta-pill,
 .summary-card {
-  padding: 16px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(12px);
+  padding: 14px 16px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
 }
 
 .meta-pill span,
 .summary-card span {
   display: block;
   font-size: 12px;
-  color: rgba(248, 255, 253, 0.7);
+  color: #64748b;
 }
 
 .meta-pill strong,
 .summary-card strong {
   display: block;
-  margin-top: 8px;
+  margin-top: 6px;
   font-size: 24px;
+  color: #0f172a;
+}
+
+.meta-pill {
+  min-width: 150px;
+}
+
+.meta-pill strong {
+  max-width: 260px;
+  overflow: hidden;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .proctoring-toolbar,
 .content-panel {
-  padding: 20px 22px;
+  padding: 18px 20px;
   border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.06);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.05);
 }
 
 .toolbar-row,
@@ -738,6 +854,28 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
 }
 
+.proctoring-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.proctoring-tabs {
+  min-width: 260px;
+}
+
+.exam-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.exam-picker span {
+  color: #64748b;
+  font-size: 13px;
+}
+
 .toolbar-select {
   width: 360px;
   max-width: 100%;
@@ -745,33 +883,67 @@ onBeforeUnmount(() => {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .summary-card {
-  border-color: rgba(15, 118, 110, 0.12);
-  background: linear-gradient(180deg, #ffffff 0%, #f5fbfa 100%);
+  position: relative;
+  overflow: hidden;
+  min-height: 112px;
+  background: #ffffff;
 }
 
-.summary-card--warn strong {
+.summary-card::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  content: "";
+  background: #94a3b8;
+}
+
+.summary-card small {
+  display: block;
+  margin-top: 8px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.summary-card--online::before,
+.summary-card--ok::before {
+  background: #16a34a;
+}
+
+.summary-card--warn::before,
+.summary-card--confirmed::before {
+  background: #dc2626;
+}
+
+.summary-card--snapshot::before,
+.summary-card--review::before {
+  background: #d97706;
+}
+
+.summary-card--warn strong,
+.summary-card--confirmed strong {
   color: #b91c1c;
 }
 
-.summary-card span {
-  color: #64748b;
+.summary-card--review strong,
+.summary-card--snapshot strong {
+  color: #b45309;
 }
 
 .content-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.9fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1.8fr) minmax(340px, 0.85fr);
+  gap: 16px;
 }
 
 .panel-header h2,
 .report-section h3 {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   color: #0f172a;
 }
 
@@ -781,11 +953,32 @@ onBeforeUnmount(() => {
 }
 
 .filter-item {
-  width: 180px;
+  width: 160px;
 }
 
-.state-tag {
-  margin-left: 6px;
+.student-cell {
+  display: grid;
+  gap: 2px;
+}
+
+.student-cell strong {
+  color: #0f172a;
+}
+
+.student-cell span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.risk-score-cell {
+  display: grid;
+  gap: 6px;
+}
+
+.state-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .event-list,
@@ -801,7 +994,7 @@ onBeforeUnmount(() => {
 .timeline-item {
   padding: 14px 16px;
   border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 18px;
+  border-radius: 14px;
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
 }
 
@@ -816,6 +1009,35 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
+.event-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.event-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.event-dot--danger {
+  background: #dc2626;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.12);
+}
+
+.event-dot--warning {
+  background: #d97706;
+  box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.14);
+}
+
+.event-dot--info {
+  background: #64748b;
+  box-shadow: 0 0 0 4px rgba(100, 116, 139, 0.12);
+}
+
 .event-item__body,
 .timeline-item__duration,
 .timeline-meta p,
@@ -826,22 +1048,38 @@ onBeforeUnmount(() => {
 
 .report-grid {
   align-content: start;
+  grid-template-columns: 1fr;
 }
 
 .drawer-content {
   min-height: 260px;
 }
 
+.drawer-title {
+  display: grid;
+  gap: 2px;
+}
+
+.drawer-title span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.drawer-title strong {
+  color: #0f172a;
+  font-size: 18px;
+}
+
 .timeline-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
 .timeline-pill {
-  padding: 14px 16px;
-  border-radius: 18px;
+  padding: 12px 14px;
+  border-radius: 14px;
   background: #f8fafc;
   border: 1px solid rgba(148, 163, 184, 0.16);
 }
@@ -874,7 +1112,7 @@ onBeforeUnmount(() => {
   margin-bottom: 18px;
   padding: 16px;
   border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 18px;
+  border-radius: 14px;
   background: #f8fafc;
 }
 
@@ -933,10 +1171,17 @@ onBeforeUnmount(() => {
   background: #f8fafc;
 }
 
+:deep(.student-row--high td.el-table__cell) {
+  background: #fff7f7;
+}
+
+:deep(.student-row--medium td.el-table__cell) {
+  background: #fffbeb;
+}
+
 @media (max-width: 1200px) {
-  .summary-grid,
-  .timeline-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .summary-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .content-grid {
@@ -946,17 +1191,31 @@ onBeforeUnmount(() => {
 
 @media (max-width: 768px) {
   .proctoring-hero {
+    align-items: stretch;
     flex-direction: column;
   }
 
-  .summary-grid,
-  .timeline-summary {
-    grid-template-columns: 1fr;
+  .proctoring-toolbar,
+  .toolbar-row,
+  .exam-picker {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .filter-item,
   .toolbar-select {
     width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .summary-grid,
+  .timeline-summary {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -981,6 +1240,10 @@ onBeforeUnmount(() => {
 :deep(.el-table) {
   border-radius: 12px;
   overflow: hidden;
+}
+
+:deep(.proctoring-tabs .el-tabs__header) {
+  margin-bottom: 0;
 }
 
 :deep(.el-table th.el-table__cell) {

@@ -46,8 +46,16 @@
 
     <el-table :data="tableData">
       <el-table-column prop="subjectName" label="课程名" width="180" />
-      <el-table-column prop="type" label="题型" width="90" />
-      <el-table-column prop="difficulty" label="难度" width="90" />
+      <el-table-column label="题型" width="90">
+        <template #default="scope">
+          {{ questionTypeLabel(scope.row.type) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="难度" width="90">
+        <template #default="scope">
+          {{ difficultyLabel(scope.row.difficulty) }}
+        </template>
+      </el-table-column>
       <el-table-column prop="content" label="题目" />
       <el-table-column prop="defaultScore" label="默认分值" width="100" />
       <el-table-column label="操作" width="220">
@@ -276,6 +284,20 @@ const singleAnswerValue = ref('')
 const multiAnswerValues = ref([])
 
 const courseLabel = (course) => `${course.id} - ${course.name}`
+const questionTypeLabelMap = {
+  SINGLE: '单选',
+  MULTI: '多选',
+  JUDGE: '判断',
+  BLANK: '填空',
+  SHORT: '简答'
+}
+const questionTypeLabel = (type) => questionTypeLabelMap[type] || type || '-'
+const difficultyLabelMap = {
+  EASY: '简单',
+  MEDIUM: '中等',
+  HARD: '困难'
+}
+const difficultyLabel = (difficulty) => difficultyLabelMap[difficulty] || difficulty || '-'
 const normalizeId = (value) => (value === null || value === undefined ? null : String(value))
 const normalizeQuestionRecords = (records) =>
   (records || []).map(item => ({

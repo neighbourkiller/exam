@@ -1,13 +1,34 @@
 <template>
   <el-card class="page-card">
-    <template #header><div class="header">组卷管理</div></template>
+    <template #header>
+      <div class="page-header">
+        <div>
+          <div class="header">组卷管理</div>
+          <p class="header-subtitle">维护试卷模板、手动选题与自动组卷规则</p>
+        </div>
+        <el-button type="success" size="large" @click="openCreateManualDialog">手动组卷</el-button>
+      </div>
+    </template>
 
-    <el-row :gutter="16">
-      <el-col :span="12">
-        <el-card>
-          <template #header>智能组卷</template>
-          <el-form :model="autoForm" label-width="100px">
+    <el-card class="section-card auto-section">
+      <template #header>
+        <div class="section-header">
+          <div>
+            <span class="section-title">智能组卷</span>
+            <span class="section-note">按题型、难度、数量和分值生成试卷</span>
+          </div>
+          <div class="section-actions">
+            <el-button @click="addRule">新增规则</el-button>
+            <el-button type="primary" @click="autoCreate">生成试卷</el-button>
+          </div>
+        </div>
+      </template>
+      <el-form :model="autoForm" label-width="90px" class="auto-form">
+        <el-row :gutter="12">
+          <el-col :xs="24" :md="8">
             <el-form-item label="试卷名称"><el-input v-model="autoForm.name" /></el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="8">
             <el-form-item label="课程">
               <el-select
                 v-model="autoForm.subjectId"
@@ -29,74 +50,51 @@
                 </el-option>
               </el-select>
             </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="8">
             <el-form-item label="描述"><el-input v-model="autoForm.description" /></el-form-item>
-          </el-form>
-          <el-table :data="autoForm.rules">
-            <el-table-column label="题型">
-              <template #default="scope">
-                <el-select v-model="scope.row.type" size="small">
-                  <el-option value="SINGLE" label="单选" />
-                  <el-option value="MULTI" label="多选" />
-                  <el-option value="JUDGE" label="判断" />
-                  <el-option value="BLANK" label="填空" />
-                  <el-option value="SHORT" label="简答" />
-                </el-select>
-              </template>
-            </el-table-column>
-            <el-table-column label="难度">
-              <template #default="scope">
-                <el-select v-model="scope.row.difficulty" size="small">
-                  <el-option value="EASY" label="简单" />
-                  <el-option value="MEDIUM" label="中等" />
-                  <el-option value="HARD" label="困难" />
-                </el-select>
-              </template>
-            </el-table-column>
-            <el-table-column label="数量" width="120">
-              <template #default="scope"><el-input-number v-model="scope.row.count" :min="1" size="small" /></template>
-            </el-table-column>
-            <el-table-column label="分值" width="120">
-              <template #default="scope"><el-input-number v-model="scope.row.score" :min="1" size="small" /></template>
-            </el-table-column>
-            <el-table-column label="操作" width="90">
-              <template #default="scope">
-                <el-button type="danger" text @click="removeRule(scope.$index)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          <div class="actions">
-            <el-button @click="addRule">新增规则</el-button>
-            <el-button type="primary" @click="autoCreate">生成试卷</el-button>
-          </div>
-        </el-card>
-      </el-col>
+          </el-col>
+        </el-row>
+      </el-form>
+      <el-table :data="autoForm.rules">
+        <el-table-column label="题型">
+          <template #default="scope">
+            <el-select v-model="scope.row.type" size="small">
+              <el-option value="SINGLE" label="单选" />
+              <el-option value="MULTI" label="多选" />
+              <el-option value="JUDGE" label="判断" />
+              <el-option value="BLANK" label="填空" />
+              <el-option value="SHORT" label="简答" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="难度">
+          <template #default="scope">
+            <el-select v-model="scope.row.difficulty" size="small">
+              <el-option value="EASY" label="简单" />
+              <el-option value="MEDIUM" label="中等" />
+              <el-option value="HARD" label="困难" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="数量" width="120">
+          <template #default="scope"><el-input-number v-model="scope.row.count" :min="1" size="small" /></template>
+        </el-table-column>
+        <el-table-column label="分值" width="120">
+          <template #default="scope"><el-input-number v-model="scope.row.score" :min="1" size="small" /></template>
+        </el-table-column>
+        <el-table-column label="操作" width="90">
+          <template #default="scope">
+            <el-button type="danger" text @click="removeRule(scope.$index)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
 
-      <el-col :span="12">
-        <el-card>
-          <template #header>试卷详情</template>
-          <el-input v-model="paperId" placeholder="输入试卷ID" class="mb-12" />
-          <el-button type="primary" @click="loadPaper">查询</el-button>
-          <div v-if="paper.id" class="paper-detail">
-            <h3>{{ paper.name }} (总分 {{ paper.totalScore }})</h3>
-            <p class="paper-meta">课程：{{ paper.subjectName || paper.subjectId }} | 出卷人：{{ paper.teacherId || '-' }}</p>
-            <el-table :data="paper.questions">
-              <el-table-column prop="sortOrder" label="序号" width="70" />
-              <el-table-column prop="type" label="题型" width="80" />
-              <el-table-column prop="content" label="题目" />
-              <el-table-column prop="score" label="分值" width="80" />
-            </el-table>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <el-divider />
-
-    <el-card>
+    <el-card class="section-card paper-list-card">
       <template #header>
         <div class="list-header">
           <span>试卷列表</span>
-          <el-button type="success" @click="openCreateManualDialog">手动组卷</el-button>
         </div>
       </template>
 
@@ -141,9 +139,18 @@
         <el-table-column label="创建时间" width="190">
           <template #default="scope">{{ formatDateTime(scope.row.createTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="240">
+        <el-table-column label="操作" width="320">
           <template #default="scope">
             <el-button size="small" @click="openPreviewDialog(scope.row)">预览</el-button>
+            <el-button
+              size="small"
+              type="success"
+              plain
+              :loading="exportingPaperId === scope.row.id"
+              @click="exportPaperPdf(scope.row)"
+            >
+              导出PDF
+            </el-button>
             <el-button
               size="small"
               type="primary"
@@ -387,18 +394,6 @@ const autoForm = reactive({
   rules: [{ type: 'SINGLE', difficulty: 'EASY', count: 5, score: 2 }]
 })
 
-const paperId = ref('')
-const paper = reactive({
-  id: null,
-  name: '',
-  subjectId: null,
-  subjectName: '',
-  description: '',
-  totalScore: 0,
-  teacherId: null,
-  questions: []
-})
-
 const subjectOptions = ref([])
 
 const paperQuery = reactive({
@@ -409,6 +404,7 @@ const paperQuery = reactive({
 })
 const paperList = ref([])
 const paperTotal = ref(0)
+const exportingPaperId = ref(null)
 const previewDialogVisible = ref(false)
 const previewLoading = ref(false)
 const previewLoadSeq = ref(0)
@@ -535,18 +531,8 @@ const autoCreate = async () => {
     return
   }
   const id = await createAutoPaperApi(autoForm)
-  paperId.value = id
   ElMessage.success(`组卷成功，试卷ID=${id}`)
-  await loadPaper()
   await loadPaperList()
-}
-
-const loadPaper = async () => {
-  if (!paperId.value) {
-    return
-  }
-  const data = await paperDetailApi(paperId.value)
-  Object.assign(paper, data)
 }
 
 const loadPaperList = async () => {
@@ -606,6 +592,187 @@ const openPreviewDialog = async (row) => {
     if (seq === previewLoadSeq.value) {
       previewLoading.value = false
     }
+  }
+}
+
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
+
+const buildPrintablePaperHtml = (detail) => {
+  const questions = (detail.questions || [])
+    .slice()
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+    .map((question, index) => ({
+      ...splitQuestionAssets(question.assets),
+      ...question,
+      displayOrder: index + 1,
+      typeLabel: questionTypeLabelMap[question.type] || question.type || '未知题型',
+      options: parseQuestionOptions(question.optionsJson)
+    }))
+
+  const questionHtml = questions.map(question => {
+    const optionsHtml = question.options.length
+      ? `<div class="options">${question.options.map(option => `
+          <p>${escapeHtml(option.label)}. ${escapeHtml(option.value)}</p>
+        `).join('')}</div>`
+      : ''
+    const imagesHtml = question.imageAssets.length
+      ? `<div class="images">${question.imageAssets.map(asset => `
+          <img src="${escapeHtml(asset.url)}" alt="${escapeHtml(asset.originalName || '题目插图')}" />
+        `).join('')}</div>`
+      : ''
+    return `
+      <section class="question">
+        <div class="question-title">
+          <strong>${question.displayOrder}.</strong>
+          <span class="type">[${escapeHtml(question.typeLabel)}]</span>
+          <span>${escapeHtml(question.content || '-')}</span>
+          <span class="score">（${escapeHtml(question.score || 0)}分）</span>
+        </div>
+        ${optionsHtml}
+        ${imagesHtml}
+      </section>
+    `
+  }).join('')
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>${escapeHtml(detail.name || '试卷')}</title>
+  <style>
+    @page { margin: 18mm 16mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #111827;
+      font-family: "Microsoft YaHei", "SimSun", serif;
+      line-height: 1.75;
+      background: #fff;
+    }
+    .paper {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    header {
+      text-align: center;
+      padding-bottom: 16px;
+      border-bottom: 2px solid #111827;
+      margin-bottom: 20px;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 26px;
+      letter-spacing: 1px;
+    }
+    .meta {
+      margin: 0;
+      color: #4b5563;
+      font-size: 13px;
+    }
+    .description {
+      margin: 10px 0 0;
+      color: #374151;
+      font-size: 14px;
+    }
+    .question {
+      break-inside: avoid;
+      padding: 12px 0;
+      border-bottom: 1px dashed #d1d5db;
+    }
+    .question-title {
+      font-size: 15px;
+    }
+    .type {
+      margin: 0 8px;
+      color: #1d4ed8;
+      font-weight: 700;
+    }
+    .score {
+      margin-left: 6px;
+      color: #6b7280;
+    }
+    .options {
+      margin: 8px 0 0 28px;
+      color: #374151;
+    }
+    .options p {
+      margin: 2px 0;
+    }
+    .images {
+      margin: 10px 0 0 28px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .images img {
+      max-width: 260px;
+      max-height: 180px;
+      object-fit: contain;
+      border: 1px solid #e5e7eb;
+    }
+    .empty {
+      margin-top: 40px;
+      text-align: center;
+      color: #6b7280;
+    }
+  </style>
+</head>
+<body>
+  <article class="paper">
+    <header>
+      <h1>${escapeHtml(detail.name || '未命名试卷')}</h1>
+      <p class="meta">课程：${escapeHtml(detail.subjectName || detail.subjectId || '-')} | 出卷人：${escapeHtml(detail.teacherId || '-')} | 总分：${escapeHtml(detail.totalScore || 0)}</p>
+      ${detail.description ? `<p class="description">说明：${escapeHtml(detail.description)}</p>` : ''}
+    </header>
+    ${questionHtml || '<p class="empty">暂无题目</p>'}
+  </article>
+  <script>
+    const waitForImages = () => Promise.all(Array.from(document.images).map(image => {
+      if (image.complete) {
+        return Promise.resolve();
+      }
+      return new Promise(resolve => {
+        image.onload = resolve;
+        image.onerror = resolve;
+      });
+    }));
+    window.addEventListener('load', async () => {
+      await waitForImages();
+      setTimeout(() => window.print(), 200);
+    });
+  <\/script>
+</body>
+</html>`
+}
+
+const exportPaperPdf = async (row) => {
+  const id = row?.id
+  if (!id) {
+    ElMessage.warning('试卷ID无效，无法导出')
+    return
+  }
+  const printWindow = window.open('', '_blank')
+  if (!printWindow) {
+    ElMessage.warning('浏览器拦截了导出窗口，请允许弹窗后重试')
+    return
+  }
+  exportingPaperId.value = id
+  printWindow.document.write('<p style="font-family: sans-serif; padding: 24px;">正在生成试卷 PDF...</p>')
+  try {
+    const detail = await paperDetailApi(id)
+    printWindow.document.open()
+    printWindow.document.write(buildPrintablePaperHtml(detail))
+    printWindow.document.close()
+  } catch (error) {
+    printWindow.close()
+    throw error
+  } finally {
+    exportingPaperId.value = null
   }
 }
 
@@ -770,15 +937,12 @@ const submitManualPaper = async () => {
   if (manualMode.value === 'edit') {
     await updatePaperApi(editingPaperId.value, payload)
     ElMessage.success('试卷更新成功')
-    paperId.value = editingPaperId.value
   } else {
     const id = await createManualPaperApi(payload)
     ElMessage.success(`组卷成功，试卷ID=${id}`)
-    paperId.value = id
   }
 
   manualDialogVisible.value = false
-  await loadPaper()
   await loadPaperList()
 }
 
@@ -792,19 +956,6 @@ const deletePaper = async (row) => {
   try {
     await deletePaperApi(row.id)
     ElMessage.success('删除成功')
-    if (paper.id === row.id) {
-      Object.assign(paper, {
-        id: null,
-        name: '',
-        subjectId: null,
-        subjectName: '',
-        description: '',
-        totalScore: 0,
-        teacherId: null,
-        questions: []
-      })
-      paperId.value = ''
-    }
     await loadPaperList()
   } catch (error) {
     if (error?.code === 'PAPER_REFERENCED_BY_EXAM') {
@@ -820,25 +971,60 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-
-
-.actions {
-  margin-top: 10px;
+.page-header {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.header-subtitle {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 13px;
 }
 
 .mb-12 {
   margin-bottom: 12px;
 }
 
-.paper-detail {
-  margin-top: 12px;
+.section-card {
+  margin-top: 16px;
+  border: none;
+  border-radius: 14px;
+  box-shadow: 0 6px 24px -18px rgba(15, 23, 42, 0.45);
 }
 
-.paper-meta {
-  margin: 0 0 10px;
-  color: #606266;
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.section-title {
+  margin-right: 12px;
+  color: #1e293b;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.section-note {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.section-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.auto-form {
+  margin-bottom: 8px;
+}
+
+.paper-list-card {
+  margin-top: 16px;
 }
 
 .list-header {
@@ -1035,6 +1221,18 @@ onMounted(async () => {
 
 :deep(.el-dialog) {
   border-radius: 16px;
+}
+
+@media (max-width: 900px) {
+  .page-header,
+  .section-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .section-actions {
+    flex-wrap: wrap;
+  }
 }
 
 </style>
