@@ -10,6 +10,7 @@ import com.ekusys.exam.exam.dto.ProctoringDispositionView;
 import com.ekusys.exam.exam.dto.ProctoringOverviewView;
 import com.ekusys.exam.exam.dto.ProctoringStudentTimelineView;
 import com.ekusys.exam.exam.dto.ProctoringStudentView;
+import com.ekusys.exam.exam.dto.SnapshotAckView;
 import com.ekusys.exam.exam.dto.SnapshotRequest;
 import com.ekusys.exam.exam.dto.StartExamResponse;
 import com.ekusys.exam.exam.dto.StudentExamResultView;
@@ -135,9 +136,8 @@ public class ExamController {
 
     @PostMapping("/{examId}/snapshot")
     @PreAuthorize("hasRole('STUDENT')")
-    public ApiResponse<Void> snapshot(@PathVariable Long examId, @Valid @RequestBody SnapshotRequest request) {
-        examService.saveSnapshot(examId, request);
-        return ApiResponse.ok("快照已保存", null);
+    public ApiResponse<SnapshotAckView> snapshot(@PathVariable Long examId, @Valid @RequestBody SnapshotRequest request) {
+        return ApiResponse.ok("快照已保存", examService.saveSnapshot(examId, request));
     }
 
     @PostMapping("/{examId}/anti-cheat-events")

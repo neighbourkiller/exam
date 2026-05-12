@@ -6,18 +6,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ekusys.exam.common.config.AppSnapshotProperties;
 import com.ekusys.exam.common.enums.SubmissionStatus;
 import com.ekusys.exam.common.exception.BusinessException;
+import com.ekusys.exam.exam.dto.SnapshotAckView;
 import com.ekusys.exam.exam.dto.SnapshotRequest;
 import com.ekusys.exam.repository.entity.Exam;
 import com.ekusys.exam.repository.entity.ExamSession;
 import com.ekusys.exam.repository.entity.Submission;
 import com.ekusys.exam.repository.entity.SubmissionAnswer;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import com.ekusys.exam.repository.mapper.SubmissionAnswerMapper;
 import com.ekusys.exam.repository.mapper.SubmissionMapper;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -29,6 +28,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +37,26 @@ import org.springframework.transaction.annotation.Transactional;
 public class ExamSnapshotService {
 
     private static final Logger log = LoggerFactory.getLogger(ExamSnapshotService.class);
+    private static final DefaultRedisScript<Long> SAVE_SNAPSHOT_SCRIPT = new DefaultRedisScript<>("""
+        local current = redis.call('GET', KEYS[2])
+        if not current then
+            local payload = redis.call('GET', KEYS[1])
+            if payload then
+                local ok, decoded = pcall(cjson.decode, payload)
+                if ok and decoded then
+                    current = decoded['snapshotVersion'] or decoded['clientTimestamp'] or decoded['timestamp']
+                end
+            end
+        end
+        local incoming = tonumber(ARGV[1])
+        local currentNumber = tonumber(current)
+        if currentNumber and currentNumber > incoming then
+            return currentNumber
+        end
+        redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+        redis.call('SET', KEYS[2], tostring(incoming), 'PX', ARGV[3])
+        return incoming
+        """, Long.class);
 
     private final ExamAccessService examAccessService;
     private final ExamSessionService examSessionService;
@@ -62,31 +82,49 @@ public class ExamSnapshotService {
         this.objectMapper = objectMapper;
     }
 
-    public void saveSnapshot(Long examId, SnapshotRequest request) {
+    public SnapshotAckView saveSnapshot(Long examId, SnapshotRequest request) {
         Long studentId = examAccessService.getCurrentUserId();
         Exam exam = examAccessService.ensureExam(examId);
         examAccessService.checkStudentAccess(examId, studentId);
 
         ExamSession session = examSessionService.requireActiveSession(examId, studentId);
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime snapshotTime = resolveSnapshotTime(request.getClientTimestamp(), now);
+        long snapshotVersion = resolveSnapshotVersion(request, now);
+        String key = snapshotKey(examId, studentId);
+        Duration snapshotTtl = resolveSnapshotTtl(exam, now);
+
         Map<String, Object> payload = new HashMap<>();
         payload.put("examId", examId);
         payload.put("studentId", studentId);
         payload.put("answers", request.getAnswers());
         payload.put("timestamp", request.getClientTimestamp() == null ? System.currentTimeMillis() : request.getClientTimestamp());
+        payload.put("clientTimestamp", request.getClientTimestamp());
+        payload.put("snapshotVersion", snapshotVersion);
+        payload.put("serverReceivedAt", now.toString());
 
+        Long storedVersion;
         try {
-            redisTemplate.opsForValue().set(
-                snapshotKey(examId, studentId),
-                objectMapper.writeValueAsString(payload),
-                resolveSnapshotTtl(exam, now)
-            );
+            storedVersion = storeSnapshotIfCurrent(key, snapshotVersion, objectMapper.writeValueAsString(payload), snapshotTtl);
         } catch (JsonProcessingException e) {
             throw new BusinessException("快照序列化失败");
         }
 
-        examSessionService.touchSnapshot(session, snapshotTime);
+        if (storedVersion != null && storedVersion > snapshotVersion) {
+            log.debug("Ignore stale snapshot: examId={}, studentId={}, incomingVersion={}, existingVersion={}",
+                examId, studentId, snapshotVersion, storedVersion);
+            return SnapshotAckView.builder()
+                .serverReceivedAt(now)
+                .clientTimestamp(request.getClientTimestamp())
+                .snapshotVersion(storedVersion)
+                .build();
+        }
+
+        examSessionService.touchSnapshot(session, now);
+        return SnapshotAckView.builder()
+            .serverReceivedAt(now)
+            .clientTimestamp(request.getClientTimestamp())
+            .snapshotVersion(storedVersion == null ? snapshotVersion : storedVersion)
+            .build();
     }
 
     public Map<Long, String> loadSnapshotAnswerMap(Long examId, Long studentId) {
@@ -116,7 +154,8 @@ public class ExamSnapshotService {
             Map<Long, String> result = new HashMap<>();
             for (Map<String, Object> answer : answers) {
                 Long qid = Long.valueOf(answer.get("questionId").toString());
-                String text = String.valueOf(answer.get("answerText"));
+                Object answerText = answer.get("answerText");
+                String text = answerText == null ? "" : String.valueOf(answerText);
                 result.put(qid, text);
             }
             return result;
@@ -173,7 +212,7 @@ public class ExamSnapshotService {
     }
 
     public void clearSnapshot(Long examId, Long studentId) {
-        redisTemplate.delete(snapshotKey(examId, studentId));
+        redisTemplate.delete(List.of(snapshotKey(examId, studentId), snapshotVersionKey(examId, studentId)));
     }
 
     public void flushAllSnapshotsToDatabase() {
@@ -209,7 +248,7 @@ public class ExamSnapshotService {
         if (!SubmissionStatus.IN_PROGRESS.name().equals(submission.getStatus())) {
             log.debug("Skip snapshot flush because submission is no longer in progress: examId={}, studentId={}, status={}",
                 examId, studentId, submission.getStatus());
-            redisTemplate.delete(key);
+            redisTemplate.delete(List.of(key, snapshotVersionKey(examId, studentId)));
             return;
         }
 
@@ -227,7 +266,8 @@ public class ExamSnapshotService {
                 SubmissionAnswer item = new SubmissionAnswer();
                 item.setSubmissionId(submission.getId());
                 item.setQuestionId(Long.valueOf(answer.get("questionId").toString()));
-                item.setAnswerText(String.valueOf(answer.get("answerText")));
+                Object answerText = answer.get("answerText");
+                item.setAnswerText(answerText == null ? "" : String.valueOf(answerText));
                 item.setFinalAnswer(false);
                 item.setSource("SNAPSHOT");
                 item.setObjectiveCorrect(null);
@@ -277,15 +317,31 @@ public class ExamSnapshotService {
         return "exam:snapshot:" + examId + ":" + studentId;
     }
 
-    private LocalDateTime resolveSnapshotTime(Long clientTimestamp, LocalDateTime fallbackTime) {
-        if (clientTimestamp == null || clientTimestamp <= 0) {
-            return fallbackTime;
-        }
-        try {
-            return LocalDateTime.ofInstant(Instant.ofEpochMilli(clientTimestamp), ZoneId.systemDefault());
-        } catch (Exception ex) {
-            log.warn("Invalid snapshot client timestamp: {}", clientTimestamp, ex);
-            return fallbackTime;
-        }
+    private String snapshotVersionKey(Long examId, Long studentId) {
+        return "exam:snapshot-version:" + examId + ":" + studentId;
     }
+
+    private Long storeSnapshotIfCurrent(String key, long snapshotVersion, String payloadJson, Duration ttl) {
+        String[] parts = key.split(":");
+        String versionKey = parts.length == 4 ? snapshotVersionKey(Long.valueOf(parts[2]), Long.valueOf(parts[3])) : key + ":version";
+        long ttlMillis = Math.max(1L, ttl.toMillis());
+        return redisTemplate.execute(
+            SAVE_SNAPSHOT_SCRIPT,
+            List.of(key, versionKey),
+            String.valueOf(snapshotVersion),
+            payloadJson,
+            String.valueOf(ttlMillis)
+        );
+    }
+
+    private long resolveSnapshotVersion(SnapshotRequest request, LocalDateTime fallbackTime) {
+        if (request.getSnapshotVersion() != null && request.getSnapshotVersion() > 0) {
+            return request.getSnapshotVersion();
+        }
+        if (request.getClientTimestamp() != null && request.getClientTimestamp() > 0) {
+            return request.getClientTimestamp();
+        }
+        return java.sql.Timestamp.valueOf(fallbackTime).getTime();
+    }
+
 }

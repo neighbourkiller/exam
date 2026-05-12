@@ -32,6 +32,7 @@ const buildBusinessError = (message, code = null, responseData = null) => {
   const error = new Error(message || '请求失败')
   error.code = code
   error.responseData = responseData
+  error.isBusinessError = true
   return error
 }
 
@@ -134,7 +135,9 @@ http.interceptors.response.use(
     if (resp && resp.success) {
       return resp.data
     }
-    ElMessage.error(resp?.message || '请求失败')
+    if (!response.config?.silent) {
+      ElMessage.error(resp?.message || '请求失败')
+    }
     return Promise.reject(buildBusinessError(resp?.message || '请求失败', resp?.code || null, resp))
   },
   async (error) => {
@@ -162,7 +165,9 @@ http.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    ElMessage.error(error?.response?.data?.message || error.message || '网络异常')
+    if (!originalRequest.silent) {
+      ElMessage.error(error?.response?.data?.message || error.message || '网络异常')
+    }
     if (error?.response?.data?.code && !error.code) {
       error.code = error.response.data.code
     }

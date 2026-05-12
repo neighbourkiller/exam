@@ -3,6 +3,7 @@ package com.ekusys.exam.exam.service;
 import com.ekusys.exam.exam.dto.AntiCheatEventRequest;
 import com.ekusys.exam.exam.dto.ExamCreateRequest;
 import com.ekusys.exam.exam.dto.SnapshotRequest;
+import com.ekusys.exam.exam.dto.SnapshotAckView;
 import com.ekusys.exam.exam.dto.StartExamResponse;
 import com.ekusys.exam.exam.dto.StudentExamResultView;
 import com.ekusys.exam.exam.dto.StudentExamView;
@@ -76,8 +77,8 @@ public class ExamService {
         return examStartService.startExam(examId);
     }
 
-    public void saveSnapshot(Long examId, SnapshotRequest request) {
-        examSnapshotService.saveSnapshot(examId, request);
+    public SnapshotAckView saveSnapshot(Long examId, SnapshotRequest request) {
+        return examSnapshotService.saveSnapshot(examId, request);
     }
 
     public void recordAntiCheatEvent(Long examId, AntiCheatEventRequest request) {

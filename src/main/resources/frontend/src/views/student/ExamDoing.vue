@@ -191,10 +191,19 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { antiCheatApi, snapshotApi, startExamApi, submitExamApi, uploadAntiCheatEvidenceApi } from '../../api'
+import { antiCheatApi, healthPingApi, snapshotApi, startExamApi, submitExamApi, uploadAntiCheatEvidenceApi } from '../../api'
 import { useAuthStore } from '../../stores/auth'
 import { useCameraProctoring } from '../../composables/useCameraProctoring'
-import { clearDraft, loadDraft, saveDraft } from '../../utils/examDraftStore'
+import {
+  clearDraft,
+  clearSyncItems,
+  deleteSyncItem,
+  enqueueSyncItem,
+  listSyncItems,
+  loadDraft,
+  saveDraft,
+  updateSyncItem
+} from '../../utils/examDraftStore'
 import { parseDateTime } from '../../utils/datetime'
 
 const route = useRoute()
@@ -221,6 +230,15 @@ const lastActivityAt = ref(Date.now())
 const endingExam = ref(false)
 const allowLeaveExam = ref(false)
 const isOnline = ref(navigator.onLine)
+const networkState = reactive({
+  status: navigator.onLine ? 'ONLINE' : 'OFFLINE',
+  latencyMs: null,
+  lastCheckedAt: null,
+  queueSize: 0,
+  flushing: false
+})
+const offlineRecoveredMode = ref(false)
+const pendingSubmitIntent = ref(null)
 const bannerState = reactive({
   type: 'warning',
   title: '考试页面处于监考模式',
@@ -259,6 +277,8 @@ let snapshotTimer = null
 let inactivityTimer = null
 let bannerResetTimer = null
 let draftSaveTimer = null
+let queueFlushTimer = null
+let healthCheckTimer = null
 let pendingDraftDirty = false
 let pendingDraftAnswerTimestampUpdate = false
 let navigationLeaveReporting = false
@@ -281,7 +301,9 @@ const syncState = reactive({
   localSavedAt: null,
   localSaveFailed: false,
   syncErrorAt: null,
-  lastSyncErrorMessage: ''
+  lastSyncErrorMessage: '',
+  lastServerAckAt: null,
+  snapshotVersion: 0
 })
 
 const answeredCount = computed(() =>
@@ -361,11 +383,32 @@ const saveStatus = computed(() => {
       detail: '正在写入本地草稿。'
     }
   }
+  if (networkState.flushing) {
+    return {
+      type: 'warning',
+      title: '正在恢复同步',
+      detail: `待同步 ${networkState.queueSize} 项，请保持网络连接。`
+    }
+  }
   if (!isOnline.value) {
     return {
       type: 'warning',
-      title: '离线，本机已保存',
-      detail: syncState.localSavedAt ? `保存于 ${formatClockTime(syncState.localSavedAt)}` : '恢复网络后会自动同步。'
+      title: '离线，仅本机保存',
+      detail: syncState.localSavedAt ? `本机保存于 ${formatClockTime(syncState.localSavedAt)}` : '恢复网络后会自动同步。'
+    }
+  }
+  if (networkState.status === 'DEGRADED') {
+    return {
+      type: 'warning',
+      title: '弱网，本机优先保存',
+      detail: networkState.latencyMs ? `延迟约 ${networkState.latencyMs}ms，后台继续同步。` : '请求较慢，后台继续重试。'
+    }
+  }
+  if (offlineRecoveredMode.value) {
+    return {
+      type: 'warning',
+      title: '离线恢复模式',
+      detail: '已从本机恢复，联网后需同步到服务器。'
     }
   }
   if (syncState.syncing) {
@@ -686,6 +729,10 @@ const showBanner = (type, title, description, sticky = false) => {
 }
 
 const showRecoveryBanner = (mode) => {
+  if (mode === 'offline-local') {
+    showBanner('warning', '已从本机离线恢复', '当前无法连接服务器，可继续作答并保存到本机；恢复网络且未超过截止时间后才能交卷。', true)
+    return
+  }
   if (mode === 'local') {
     showBanner('success', '已恢复本地草稿', '检测到本机保存的较新答题进度，系统已优先恢复，并会在联网后自动同步。')
     return
@@ -788,6 +835,7 @@ const reportAntiCheatEvent = async (eventType, durationMs = 0, extraPayload = {}
   if (!shouldRecordClientEvent(eventType)) {
     return
   }
+  const occurredAt = Date.now()
   const eventCount = recordRecentEvent(eventType)
   const repeatThreshold = policyNumber('repeatEventThreshold', DEFAULT_PROCTORING_POLICY.repeatEventThreshold)
   const offscreenLongMs = policyNumber('offscreenLongThresholdSeconds', DEFAULT_PROCTORING_POLICY.offscreenLongThresholdSeconds) * 1000
@@ -839,13 +887,32 @@ const reportAntiCheatEvent = async (eventType, durationMs = 0, extraPayload = {}
       durationMs,
       payload: buildAntiCheatPayload({
         eventCount,
+        occurredAt,
         ...extraPayload,
         evidenceUploadError
       }),
       evidenceJson: evidenceList.length ? JSON.stringify(evidenceList) : null
+    }, { silent: true, timeout: 10000 })
+  } catch (error) {
+    if (!isRecoverableNetworkError(error)) {
+      syncState.syncErrorAt = Date.now()
+      syncState.lastSyncErrorMessage = error?.message || '监考事件同步失败'
+      return
+    }
+    await queueAntiCheatSync({
+      eventType,
+      durationMs,
+      payload: buildAntiCheatPayload({
+        eventCount,
+        occurredAt,
+        ...extraPayload,
+        evidenceUploadError,
+        enqueueError: error?.message || 'anti-cheat event queued'
+      }),
+      evidenceJson: evidenceList.length ? JSON.stringify(evidenceList) : null,
+      occurredAt
     })
-  } catch {
-    // ignore
+    scheduleQueueFlush(retryDelayForAttempt(0))
   }
 }
 
@@ -877,12 +944,81 @@ const syncCountdown = () => {
   secondsLeft.value = Math.max(0, Math.floor((examEndAt.value.getTime() - Date.now()) / 1000))
 }
 
+const isExamExpiredLocally = () =>
+  examEndAt.value instanceof Date
+  && !Number.isNaN(examEndAt.value.getTime())
+  && Date.now() >= examEndAt.value.getTime()
+
+const buildExamRuntime = () => ({
+  examId: state.examId || examId,
+  examName: state.examName,
+  questions: state.questions,
+  proctoringPolicy: state.proctoringPolicy,
+  examEndAt: examEndAt.value instanceof Date ? examEndAt.value.toISOString() : null,
+  savedAt: Date.now()
+})
+
+const updateNetworkStatus = (status, latencyMs = null) => {
+  networkState.status = status
+  networkState.latencyMs = latencyMs
+  networkState.lastCheckedAt = Date.now()
+  isOnline.value = status !== 'OFFLINE'
+}
+
+const isRecoverableNetworkError = (error) => {
+  if (error?.isBusinessError || error?.responseData) {
+    return false
+  }
+  return !navigator.onLine
+    || error?.code === 'ECONNABORTED'
+    || error?.code === 'ERR_NETWORK'
+    || error?.code === 'ERR_CANCELED'
+    || error?.message === 'Network Error'
+}
+
+const markNetworkFailure = (error) => {
+  const message = error?.code === 'ECONNABORTED' ? '网络请求超时' : (error?.message || '网络异常')
+  updateNetworkStatus(navigator.onLine ? 'DEGRADED' : 'OFFLINE')
+  syncState.lastSyncErrorMessage = message
+}
+
+const runHealthCheck = async () => {
+  if (!navigator.onLine) {
+    updateNetworkStatus('OFFLINE')
+    return false
+  }
+  const startedAt = Date.now()
+  try {
+    await healthPingApi()
+    const latency = Date.now() - startedAt
+    updateNetworkStatus(latency > 2500 ? 'DEGRADED' : 'ONLINE', latency)
+    return true
+  } catch (error) {
+    markNetworkFailure(error)
+    return false
+  }
+}
+
+const refreshQueueSize = async () => {
+  if (!syncState.userId) {
+    networkState.queueSize = 0
+    return 0
+  }
+  const items = await listSyncItems(syncState.userId, examId)
+  networkState.queueSize = items.length
+  return items.length
+}
+
 const persistDraftState = async ({
   updatedAt = Date.now(),
   lastSyncedAt = syncState.lastSyncedAt,
+  lastServerAckAt = syncState.lastServerAckAt,
+  snapshotVersion = syncState.snapshotVersion,
   dirty = true,
+  nextPendingSubmitIntent = pendingSubmitIntent.value,
   answersMap = buildAnswerMapFromState(),
-  markedIds = buildMarkedQuestionIdsFromState()
+  markedIds = buildMarkedQuestionIdsFromState(),
+  examRuntime = buildExamRuntime()
 } = {}) => {
   if (!syncState.userId) {
     return null
@@ -897,10 +1033,17 @@ const persistDraftState = async ({
       markedQuestionIds: markedIds,
       updatedAt,
       lastSyncedAt: nextLastSyncedAt,
+      lastServerAckAt,
+      snapshotVersion,
+      pendingSubmitIntent: nextPendingSubmitIntent,
+      examRuntime,
       dirty
     })
     syncState.updatedAt = updatedAt
     syncState.lastSyncedAt = nextLastSyncedAt
+    syncState.lastServerAckAt = lastServerAckAt
+    syncState.snapshotVersion = Number(snapshotVersion || 0)
+    pendingSubmitIntent.value = nextPendingSubmitIntent
     syncState.dirty = Boolean(dirty)
     syncState.localSavedAt = Date.now()
     syncState.localSaveFailed = false
@@ -1039,33 +1182,167 @@ const handleBlockedExamLeave = async ({ source, fromPath, toPath, historyState =
   }
 }
 
+const retryDelayForAttempt = (attemptCount = 0) => {
+  const delays = [2000, 5000, 10000, 30000]
+  return delays[Math.min(attemptCount, delays.length - 1)]
+}
+
+const buildSnapshotPayload = (snapshotVersion = syncState.updatedAt || Date.now()) => ({
+  ...buildSubmitPayload(),
+  clientTimestamp: snapshotVersion,
+  snapshotVersion
+})
+
+const queueSnapshotSync = async (payload) => {
+  if (!syncState.userId) {
+    return
+  }
+  await enqueueSyncItem({
+    userId: syncState.userId,
+    examId,
+    type: 'SNAPSHOT',
+    payload,
+    occurredAt: Date.now()
+  })
+  await refreshQueueSize()
+}
+
+const queueAntiCheatSync = async ({ eventType, durationMs, payload, evidenceJson, occurredAt = Date.now() }) => {
+  if (!syncState.userId) {
+    return
+  }
+  await enqueueSyncItem({
+    userId: syncState.userId,
+    examId,
+    type: 'ANTI_CHEAT',
+    payload: {
+      eventType,
+      durationMs,
+      payload,
+      evidenceJson,
+      occurredAt
+    },
+    occurredAt
+  })
+  await refreshQueueSize()
+}
+
+const flushSyncQueue = async ({ force = false } = {}) => {
+  if (!syncState.userId || networkState.flushing) {
+    return false
+  }
+  if (!navigator.onLine) {
+    updateNetworkStatus('OFFLINE')
+    return false
+  }
+  const items = await listSyncItems(syncState.userId, examId)
+  networkState.queueSize = items.length
+  const now = Date.now()
+  const dueItems = items.filter((item) => force || !item.nextAttemptAt || item.nextAttemptAt <= now)
+  if (!dueItems.length) {
+    return true
+  }
+  networkState.flushing = true
+  updateNetworkStatus('RECONNECTING')
+  try {
+    for (const item of dueItems) {
+      try {
+        if (item.type === 'SNAPSHOT') {
+          const ack = await snapshotApi(examId, item.payload, { silent: true, timeout: 10000 })
+          syncState.lastSyncedAt = Math.max(Number(syncState.lastSyncedAt || 0), Number(item.payload?.snapshotVersion || item.occurredAt || 0))
+          syncState.lastServerAckAt = ack?.serverReceivedAt || syncState.lastServerAckAt
+          syncState.snapshotVersion = Math.max(syncState.snapshotVersion || 0, Number(ack?.snapshotVersion || item.payload?.snapshotVersion || 0))
+        } else if (item.type === 'ANTI_CHEAT') {
+          const originalPayload = item.payload?.payload
+          let parsedPayload = {}
+          try {
+            parsedPayload = originalPayload ? JSON.parse(originalPayload) : {}
+          } catch {
+            parsedPayload = { rawPayload: originalPayload }
+          }
+          await antiCheatApi(examId, {
+            eventType: item.payload?.eventType,
+            durationMs: item.payload?.durationMs || 0,
+            payload: JSON.stringify({
+              ...parsedPayload,
+              occurredAt: item.payload?.occurredAt || item.occurredAt,
+              replayed: true,
+              replayedAt: Date.now(),
+              offlineDurationMs: Math.max(0, Date.now() - Number(item.payload?.occurredAt || item.occurredAt || Date.now()))
+            }),
+            evidenceJson: item.payload?.evidenceJson || null
+          }, { silent: true, timeout: 10000 })
+        }
+        await deleteSyncItem(item.id)
+      } catch (error) {
+        if (!isRecoverableNetworkError(error)) {
+          item.lastError = error?.message || '同步失败'
+          await deleteSyncItem(item.id)
+          syncState.syncErrorAt = Date.now()
+          syncState.lastSyncErrorMessage = item.lastError
+          break
+        }
+        item.attemptCount = Number(item.attemptCount || 0) + 1
+        item.nextAttemptAt = Date.now() + retryDelayForAttempt(item.attemptCount)
+        item.lastError = error?.message || '同步失败'
+        await updateSyncItem(item)
+        markNetworkFailure(error)
+        break
+      }
+    }
+  } finally {
+    networkState.flushing = false
+    await refreshQueueSize()
+    if (navigator.onLine && networkState.status === 'RECONNECTING') {
+      updateNetworkStatus('ONLINE')
+    }
+  }
+  return networkState.queueSize === 0
+}
+
+const scheduleQueueFlush = (delayMs = 0) => {
+  if (queueFlushTimer) {
+    clearTimeout(queueFlushTimer)
+  }
+  queueFlushTimer = setTimeout(() => {
+    queueFlushTimer = null
+    void flushSyncQueue()
+  }, delayMs)
+}
+
 const syncDirtyDraft = async ({ force = false, notify = false } = {}) => {
   if (!syncState.userId || !syncState.initialized || syncState.syncing) {
     return false
   }
   if (!navigator.onLine) {
+    updateNetworkStatus('OFFLINE')
     return false
   }
   if (!force && !syncState.dirty) {
+    await flushSyncQueue()
     return false
   }
 
   syncState.syncing = true
   syncState.syncErrorAt = null
   syncState.lastSyncErrorMessage = ''
-  const syncVersion = syncState.updatedAt || Date.now()
+  const syncVersion = Math.max(syncState.updatedAt || 0, (syncState.snapshotVersion || 0) + 1, Date.now())
+  const payload = buildSnapshotPayload(syncVersion)
   try {
-    await snapshotApi(examId, {
-      ...buildSubmitPayload(),
-      clientTimestamp: syncVersion
-    })
+    const startedAt = Date.now()
+    const ack = await snapshotApi(examId, payload, { silent: true, timeout: 10000 })
+    const latency = Date.now() - startedAt
+    updateNetworkStatus(latency > 2500 ? 'DEGRADED' : 'ONLINE', latency)
 
     const latestUpdatedAt = syncState.updatedAt || syncVersion
     await persistDraftState({
       updatedAt: latestUpdatedAt,
       lastSyncedAt: syncVersion,
+      lastServerAckAt: ack?.serverReceivedAt || null,
+      snapshotVersion: Number(ack?.snapshotVersion || syncVersion),
       dirty: latestUpdatedAt > syncVersion
     })
+    await flushSyncQueue({ force: true })
 
     if (notify) {
       ElMessage.success('答题进度已同步到服务器')
@@ -1074,6 +1351,12 @@ const syncDirtyDraft = async ({ force = false, notify = false } = {}) => {
   } catch (error) {
     syncState.syncErrorAt = Date.now()
     syncState.lastSyncErrorMessage = error?.message || '服务器同步失败'
+    if (!isRecoverableNetworkError(error)) {
+      return false
+    }
+    await queueSnapshotSync(payload)
+    markNetworkFailure(error)
+    scheduleQueueFlush(retryDelayForAttempt(0))
     return false
   } finally {
     syncState.syncing = false
@@ -1082,16 +1365,38 @@ const syncDirtyDraft = async ({ force = false, notify = false } = {}) => {
 
 const submit = async (needConfirm = true) => {
   if (!navigator.onLine) {
+    pendingSubmitIntent.value = { attemptedAt: Date.now() }
+    await persistDraftState({
+      updatedAt: Date.now(),
+      lastSyncedAt: syncState.lastSyncedAt,
+      dirty: true,
+      nextPendingSubmitIntent: pendingSubmitIntent.value
+    })
+    ElMessage.warning('当前网络已断开，答案已保存在本地草稿。请恢复网络后再交卷。')
+    return
+  }
+  if (isExamExpiredLocally() && syncState.dirty) {
     await persistDraftState({
       updatedAt: Date.now(),
       lastSyncedAt: syncState.lastSyncedAt,
       dirty: true
     })
-    ElMessage.warning('当前网络已断开，答案已保存在本地草稿。请恢复网络后再交卷。')
+    ElMessage.warning('考试作答时间已结束，本机未同步答案不会补交，系统将以服务端最后同步快照自动交卷。')
     return
   }
   if (needConfirm) {
     await ElMessageBox.confirm('确认提交试卷？提交后不可修改。', '提示')
+  }
+  await persistDraftState({
+    updatedAt: Date.now(),
+    lastSyncedAt: syncState.lastSyncedAt,
+    dirty: true,
+    nextPendingSubmitIntent: null
+  })
+  const synced = await syncDirtyDraft({ force: true })
+  if (!synced && syncState.dirty) {
+    ElMessage.warning(syncState.lastSyncErrorMessage || '当前网络不稳定，答案已保存在本机。请等待同步成功后再交卷。')
+    return
   }
   await submitExamApi(examId, buildSubmitPayload())
   allowLeaveExam.value = true
@@ -1101,6 +1406,7 @@ const submit = async (needConfirm = true) => {
   }
   if (syncState.userId) {
     await clearDraft(syncState.userId, examId)
+    await clearSyncItems(syncState.userId, examId)
   }
   syncState.dirty = false
   cameraProctoring.stop()
@@ -1209,25 +1515,36 @@ const onContextMenu = (event) => {
 }
 
 const onOffline = () => {
-  isOnline.value = false
+  updateNetworkStatus('OFFLINE')
   if (offlineStartedAt.value == null) {
     offlineStartedAt.value = Date.now()
   }
   showBanner('warning', '网络连接已断开', '请尽快恢复网络。页面会尽量保留当前内容，恢复后会记录本次离线时长。', true)
 }
 
-const onOnline = () => {
-  isOnline.value = true
+const onOnline = async () => {
+  updateNetworkStatus('RECONNECTING')
+  await runHealthCheck()
   const shouldNotify = syncState.dirty
   if (offlineStartedAt.value == null) {
     resetBanner()
+    await flushSyncQueue({ force: true })
     void syncDirtyDraft({ force: shouldNotify, notify: shouldNotify })
     return
   }
   const durationMs = Date.now() - offlineStartedAt.value
   offlineStartedAt.value = null
-  reportAntiCheatEvent('NETWORK_OFFLINE', durationMs, { recovered: true })
+  await reportAntiCheatEvent('NETWORK_OFFLINE', durationMs, { recovered: true })
+  await flushSyncQueue({ force: true })
+  if (isExamExpiredLocally()) {
+    showBanner('warning', '网络已恢复但考试已截止', '本机未同步答案不会补交，系统将以服务端最后同步快照自动交卷。', true)
+    return
+  }
+  offlineRecoveredMode.value = false
   void syncDirtyDraft({ force: shouldNotify, notify: shouldNotify })
+  if (pendingSubmitIntent.value) {
+    showBanner('warning', '网络已恢复', '之前离线时曾尝试交卷，请确认同步完成后重新点击交卷。', true)
+  }
 }
 
 const onActivity = () => {
@@ -1280,29 +1597,62 @@ const onPopState = (event) => {
 }
 
 const bootstrapExam = async () => {
-  const data = await startExamApi(examId)
+  syncState.userId = auth.userId == null ? null : String(auth.userId)
+  syncState.initialized = false
+  const localDraft = syncState.userId ? await loadDraft(syncState.userId, examId) : null
+  let data = null
+  try {
+    data = await startExamApi(examId)
+  } catch (error) {
+    if (!isRecoverableNetworkError(error)) {
+      throw error
+    }
+    const runtime = localDraft?.examRuntime
+    const localExamEndAt = parseDateTime(runtime?.examEndAt || runtime?.deadlineTime)
+    if (!runtime?.questions?.length || !localExamEndAt || Date.now() >= localExamEndAt.getTime()) {
+      throw error
+    }
+    data = {
+      examId,
+      examName: runtime.examName,
+      questions: runtime.questions,
+      proctoringPolicy: runtime.proctoringPolicy,
+      deadlineTime: localExamEndAt,
+      resumed: true,
+      offlineRecovered: true
+    }
+    offlineRecoveredMode.value = true
+    updateNetworkStatus('OFFLINE')
+  }
   state.examId = String(data?.examId || examId)
   state.examName = data?.examName || ''
   state.questions = Array.isArray(data?.questions) ? data.questions : []
   state.proctoringPolicy = normalizePolicy(data?.proctoringPolicy)
+  examEndAt.value = resolveExamEndTime(data)
   resetBanner()
-
-  syncState.userId = auth.userId == null ? null : String(auth.userId)
-  syncState.initialized = false
 
   const serverAnswerMap = buildAnswerMapFromQuestions(state.questions)
   const serverDraftTime = parseDateTime(data?.draftUpdatedAt)?.getTime() || 0
   const hasServerDraft = serverDraftTime > 0 || hasDraftContent(serverAnswerMap)
-  const localDraft = syncState.userId ? await loadDraft(syncState.userId, examId) : null
 
   let selectedAnswers = serverAnswerMap
-  let selectedMode = 'new'
+  let selectedMode = data?.offlineRecovered ? 'offline-local' : 'new'
   let draftUpdatedAt = serverDraftTime || Date.now()
   let lastSyncedAt = serverDraftTime || Date.now()
   let dirty = false
   let selectedMarkedQuestionIds = []
 
-  if (localDraft && Number(localDraft.updatedAt || 0) > serverDraftTime) {
+  pendingSubmitIntent.value = localDraft?.pendingSubmitIntent || null
+  syncState.snapshotVersion = Number(localDraft?.snapshotVersion || 0)
+  syncState.lastServerAckAt = localDraft?.lastServerAckAt || null
+
+  if (data?.offlineRecovered && localDraft) {
+    selectedAnswers = localDraft.answers || {}
+    selectedMarkedQuestionIds = localDraft.markedQuestionIds || []
+    draftUpdatedAt = Number(localDraft.updatedAt) || Date.now()
+    lastSyncedAt = Number(localDraft.lastSyncedAt || 0) || null
+    dirty = true
+  } else if (localDraft && Number(localDraft.updatedAt || 0) > serverDraftTime) {
     selectedAnswers = localDraft.answers || {}
     selectedMarkedQuestionIds = localDraft.markedQuestionIds || []
     selectedMode = 'local'
@@ -1328,7 +1678,6 @@ const bootstrapExam = async () => {
   })
   syncState.initialized = true
 
-  examEndAt.value = resolveExamEndTime(data)
   syncCountdown()
   timer = setInterval(() => {
     syncCountdown()
@@ -1340,7 +1689,11 @@ const bootstrapExam = async () => {
 
   snapshotTimer = setInterval(() => {
     void syncDirtyDraft()
+    void flushSyncQueue()
   }, 15000)
+  healthCheckTimer = setInterval(() => {
+    void runHealthCheck()
+  }, 30000)
   lastActivityAt.value = Date.now()
   inactivityTimer = setInterval(checkLongInactivity, 5000)
   window.addEventListener('blur', onBlur)
@@ -1363,9 +1716,11 @@ const bootstrapExam = async () => {
   setExamHistoryLock({ replace: true })
 
   showRecoveryBanner(selectedMode)
-  if (selectedMode === 'local' && navigator.onLine) {
+  await refreshQueueSize()
+  if ((selectedMode === 'local' || selectedMode === 'offline-local') && navigator.onLine) {
     void syncDirtyDraft({ force: true })
   }
+  void flushSyncQueue({ force: true })
   await tryEnterFullscreen()
   void cameraProctoring.start(state.proctoringPolicy)
 }
@@ -1414,6 +1769,8 @@ onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
   if (snapshotTimer) clearInterval(snapshotTimer)
   if (inactivityTimer) clearInterval(inactivityTimer)
+  if (healthCheckTimer) clearInterval(healthCheckTimer)
+  if (queueFlushTimer) clearTimeout(queueFlushTimer)
   if (bannerResetTimer) clearTimeout(bannerResetTimer)
   cameraProctoring.stop()
   flushDraftSave()

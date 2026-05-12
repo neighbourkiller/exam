@@ -17,8 +17,10 @@ import com.ekusys.exam.repository.entity.Exam;
 import com.ekusys.exam.repository.entity.ExamSession;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -106,6 +108,38 @@ class ExamSubmissionServiceTest {
         assertEquals(60, result.getTotalScore());
         verify(examSubmissionProcessingService).processAcceptedSubmission(99L);
         verify(examSubmissionProcessingService, never()).buildProcessingResult(any());
+    }
+
+    @Test
+    void submitShouldKeepEmptyAnswerText() {
+        Exam exam = exam(1L, 100);
+        ExamSession session = activeSession(1L, 11L);
+        SubmitExamRequest request = new SubmitExamRequest();
+        request.setAnswers(List.of(answer(1001L, "")));
+        when(examAccessService.getCurrentUserId()).thenReturn(11L);
+        when(examAccessService.ensureExam(1L)).thenReturn(exam);
+        doNothing().when(examAccessService).checkStudentAccess(1L, 11L);
+        when(examSessionService.findLatestSession(1L, 11L)).thenReturn(session);
+        when(examSessionService.isExpired(eq(session), any(LocalDateTime.class))).thenReturn(false);
+        when(examSubmissionAcceptanceService.acceptSubmission(eq(exam), eq(session), eq(11L), any(), any(LocalDateTime.class), eq(false)))
+            .thenReturn(new ExamSubmissionAcceptedContext(99L, 1L, 11L, LocalDateTime.now(), false));
+        when(examSubmissionProcessingService.buildProcessingResult(99L)).thenReturn(SubmitResultView.builder()
+            .submissionId(99L)
+            .status("PROCESSING")
+            .build());
+
+        examSubmissionService.submit(1L, request);
+
+        ArgumentCaptor<Map<Long, String>> answersCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(examSubmissionAcceptanceService).acceptSubmission(
+            eq(exam),
+            eq(session),
+            eq(11L),
+            answersCaptor.capture(),
+            any(LocalDateTime.class),
+            eq(false)
+        );
+        assertEquals("", answersCaptor.getValue().get(1001L));
     }
 
     private Exam exam(Long id, Integer passScore) {

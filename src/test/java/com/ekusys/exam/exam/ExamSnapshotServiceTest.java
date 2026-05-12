@@ -1,7 +1,9 @@
 package com.ekusys.exam.exam;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
@@ -13,6 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ekusys.exam.common.config.AppSnapshotProperties;
 import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.exam.dto.AnswerPayload;
+import com.ekusys.exam.exam.dto.SnapshotAckView;
 import com.ekusys.exam.exam.dto.SnapshotRequest;
 import com.ekusys.exam.exam.service.ExamAccessService;
 import com.ekusys.exam.exam.service.ExamSessionService;
@@ -30,9 +33,7 @@ import com.ekusys.exam.repository.mapper.SubmissionAnswerMapper;
 import com.ekusys.exam.repository.mapper.SubmissionMapper;
 import com.ekusys.exam.repository.mapper.UserMapper;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +45,7 @@ import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 @ExtendWith(MockitoExtension.class)
 class ExamSnapshotServiceTest {
@@ -100,7 +102,7 @@ class ExamSnapshotServiceTest {
     }
 
     @Test
-    void saveSnapshotShouldSetTtlRelativeToExamEndTime() {
+    void saveSnapshotShouldSetTtlRelativeToExamEndTimeAndTouchWithServerTime() {
         Exam exam = new Exam();
         exam.setId(1L);
         exam.setEndTime(LocalDateTime.now().plusHours(2));
@@ -115,31 +117,90 @@ class ExamSnapshotServiceTest {
         session.setStudentId(100L);
         session.setStatus("ANSWERING");
         when(examSessionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(session);
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-
         SnapshotRequest request = new SnapshotRequest();
         AnswerPayload payload = new AnswerPayload();
         payload.setQuestionId(11L);
         payload.setAnswerText("A");
         request.setAnswers(List.of(payload));
         request.setClientTimestamp(1_744_021_234_000L);
+        when(redisTemplate.execute(
+            any(DefaultRedisScript.class),
+            anyList(),
+            eq(String.valueOf(request.getClientTimestamp())),
+            any(String.class),
+            any(String.class)
+        )).thenReturn(request.getClientTimestamp());
 
+        LocalDateTime beforeSave = LocalDateTime.now();
+        SnapshotAckView ack;
         try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
             mocked.when(SecurityUtils::getCurrentUserId).thenReturn(100L);
-            snapshotService.saveSnapshot(1L, request);
+            ack = snapshotService.saveSnapshot(1L, request);
         }
+        LocalDateTime afterSave = LocalDateTime.now();
 
-        verify(valueOperations).set(
-            eq("exam:snapshot:1:100"),
+        ArgumentCaptor<List<String>> keysCaptor = ArgumentCaptor.forClass(List.class);
+        verify(redisTemplate).execute(
+            any(DefaultRedisScript.class),
+            keysCaptor.capture(),
+            eq(String.valueOf(request.getClientTimestamp())),
             any(String.class),
-            any(Duration.class)
+            any(String.class)
         );
+        assertEquals(List.of("exam:snapshot:1:100", "exam:snapshot-version:1:100"), keysCaptor.getValue());
         ArgumentCaptor<ExamSession> sessionCaptor = ArgumentCaptor.forClass(ExamSession.class);
         verify(examSessionMapper).updateById(sessionCaptor.capture());
-        assertEquals(
-            LocalDateTime.ofInstant(Instant.ofEpochMilli(request.getClientTimestamp()), ZoneId.systemDefault()),
-            sessionCaptor.getValue().getLastSnapshotTime()
-        );
+        LocalDateTime touchedAt = sessionCaptor.getValue().getLastSnapshotTime();
+        assertFalse(touchedAt.isBefore(beforeSave));
+        assertFalse(touchedAt.isAfter(afterSave));
+        assertEquals(request.getClientTimestamp(), ack.getClientTimestamp());
+        assertEquals(request.getClientTimestamp(), ack.getSnapshotVersion());
+        assertFalse(ack.getServerReceivedAt().isBefore(beforeSave));
+        assertFalse(ack.getServerReceivedAt().isAfter(afterSave));
+    }
+
+    @Test
+    void saveSnapshotShouldIgnoreStaleVersion() {
+        Exam exam = new Exam();
+        exam.setId(1L);
+        exam.setEndTime(LocalDateTime.now().plusHours(2));
+        when(examMapper.selectById(1L)).thenReturn(exam);
+        StudentTeachingClass relation = new StudentTeachingClass();
+        relation.setTeachingClassId(99L);
+        when(studentTeachingClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(relation));
+        when(examTargetClassMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(1L);
+        ExamSession session = new ExamSession();
+        session.setId(10L);
+        session.setExamId(1L);
+        session.setStudentId(100L);
+        session.setStatus("ANSWERING");
+        when(examSessionMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(session);
+
+        SnapshotRequest request = new SnapshotRequest();
+        AnswerPayload payload = new AnswerPayload();
+        payload.setQuestionId(11L);
+        payload.setAnswerText("A");
+        request.setAnswers(List.of(payload));
+        request.setClientTimestamp(10L);
+        request.setSnapshotVersion(10L);
+        when(redisTemplate.execute(
+            any(DefaultRedisScript.class),
+            anyList(),
+            eq("10"),
+            any(String.class),
+            any(String.class)
+        )).thenReturn(12L);
+
+        SnapshotAckView ack;
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(100L);
+            ack = snapshotService.saveSnapshot(1L, request);
+        }
+
+        assertEquals(12L, ack.getSnapshotVersion());
+        assertEquals(10L, ack.getClientTimestamp());
+        verify(valueOperations, never()).set(any(String.class), any(String.class), any(Duration.class));
+        verify(examSessionMapper, never()).updateById(any(ExamSession.class));
     }
 
     @Test
@@ -155,7 +216,7 @@ class ExamSnapshotServiceTest {
 
         snapshotService.flushSnapshotKey("exam:snapshot:1:100");
 
-        verify(redisTemplate).delete("exam:snapshot:1:100");
+        verify(redisTemplate).delete(List.of("exam:snapshot:1:100", "exam:snapshot-version:1:100"));
         verify(submissionAnswerMapper, never()).insert(org.mockito.ArgumentMatchers.<SubmissionAnswer>any());
     }
 
@@ -177,13 +238,13 @@ class ExamSnapshotServiceTest {
 
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get("exam:snapshot:1:100")).thenReturn(
-            "{\"answers\":[{\"questionId\":12,\"answerText\":\"B\"},{\"questionId\":11,\"answerText\":\"C\"}]}"
+            "{\"answers\":[{\"questionId\":12,\"answerText\":\"B\"},{\"questionId\":11,\"answerText\":\"\"}]}"
         );
 
         Map<Long, String> answerMap = snapshotService.loadSnapshotAnswerMap(1L, 100L);
 
         assertEquals(2, answerMap.size());
-        assertEquals("C", answerMap.get(11L));
+        assertEquals("", answerMap.get(11L));
         assertEquals("B", answerMap.get(12L));
     }
 

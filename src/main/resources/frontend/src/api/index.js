@@ -3,6 +3,7 @@ import http from './http'
 export const loginApi = (data) => http.post('/auth/login', data)
 export const logoutApi = () => http.post('/auth/logout')
 export const meApi = () => http.get('/auth/me')
+export const healthPingApi = () => http.get('/health/ping', { silent: true, timeout: 3000 })
 
 export const queryQuestionsApi = (data) => http.post('/questions/query', data)
 export const listQuestionSubjectsApi = () => http.get('/questions/subjects')
@@ -33,9 +34,9 @@ export const proctoringTimelineApi = (examId, studentId) => http.get(`/exams/${e
 export const updateProctoringDispositionApi = (examId, studentId, data) =>
   http.put(`/exams/${examId}/proctoring/students/${studentId}/disposition`, data)
 export const startExamApi = (id) => http.post(`/exams/${id}/start`)
-export const snapshotApi = (id, data) => http.post(`/exams/${id}/snapshot`, data)
+export const snapshotApi = (id, data, config = {}) => http.post(`/exams/${id}/snapshot`, data, config)
 export const submitExamApi = (id, data) => http.post(`/exams/${id}/submit`, data)
-export const antiCheatApi = (id, data) => http.post(`/exams/${id}/anti-cheat-events`, data)
+export const antiCheatApi = (id, data, config = {}) => http.post(`/exams/${id}/anti-cheat-events`, data, config)
 export const uploadAntiCheatEvidenceApi = (id, formData) => http.post(`/exams/${id}/anti-cheat-evidence`, formData, {
   headers: { 'Content-Type': 'multipart/form-data' }
 })

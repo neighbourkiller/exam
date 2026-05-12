@@ -1,6 +1,7 @@
 const DB_NAME = 'exam-local-drafts'
-const DB_VERSION = 1
-const STORE_NAME = 'drafts'
+const DB_VERSION = 2
+const DRAFT_STORE_NAME = 'drafts'
+const QUEUE_STORE_NAME = 'syncQueue'
 
 let openRequestPromise = null
 
@@ -27,7 +28,28 @@ const cloneMarkedQuestionIds = (markedQuestionIds = []) => {
   return [...new Set(markedQuestionIds.map((item) => String(item)).filter((item) => item))]
 }
 
+const cloneExamRuntime = (runtime = {}) => ({
+  examId: runtime?.examId == null ? null : String(runtime.examId),
+  examName: runtime?.examName || '',
+  questions: Array.isArray(runtime?.questions) ? JSON.parse(JSON.stringify(runtime.questions)) : [],
+  proctoringPolicy: runtime?.proctoringPolicy ? JSON.parse(JSON.stringify(runtime.proctoringPolicy)) : {},
+  examEndAt: runtime?.examEndAt || null,
+  deadlineTime: runtime?.deadlineTime || null,
+  savedAt: runtime?.savedAt || Date.now()
+})
+
 const buildStorageKey = (userId, examId) => `${String(userId)}:${String(examId)}`
+
+const ensureStores = (db) => {
+  if (!db.objectStoreNames.contains(DRAFT_STORE_NAME)) {
+    db.createObjectStore(DRAFT_STORE_NAME, { keyPath: 'storageKey' })
+  }
+  if (!db.objectStoreNames.contains(QUEUE_STORE_NAME)) {
+    const queueStore = db.createObjectStore(QUEUE_STORE_NAME, { keyPath: 'id', autoIncrement: true })
+    queueStore.createIndex('byExam', 'examStorageKey', { unique: false })
+    queueStore.createIndex('byNextAttemptAt', 'nextAttemptAt', { unique: false })
+  }
+}
 
 const openDatabase = () => {
   if (!canUseIndexedDb()) {
@@ -37,26 +59,28 @@ const openDatabase = () => {
     openRequestPromise = new Promise((resolve, reject) => {
       const request = window.indexedDB.open(DB_NAME, DB_VERSION)
       request.onerror = () => reject(request.error || new Error('打开本地草稿库失败'))
-      request.onupgradeneeded = () => {
+      request.onupgradeneeded = () => ensureStores(request.result)
+      request.onsuccess = () => {
         const db = request.result
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          db.createObjectStore(STORE_NAME, { keyPath: 'storageKey' })
+        db.onversionchange = () => {
+          db.close()
+          openRequestPromise = null
         }
+        resolve(db)
       }
-      request.onsuccess = () => resolve(request.result)
     })
   }
   return openRequestPromise
 }
 
-const withStore = async (mode, handler) => {
+const withStore = async (storeName, mode, handler) => {
   const db = await openDatabase()
   if (!db) {
     return null
   }
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, mode)
-    const store = transaction.objectStore(STORE_NAME)
+    const transaction = db.transaction(storeName, mode)
+    const store = transaction.objectStore(storeName)
     let settled = false
 
     const finish = (value) => {
@@ -83,7 +107,7 @@ export const loadDraft = async (userId, examId) => {
   if (!userId || !examId) {
     return null
   }
-  const result = await withStore('readonly', (store, done) => {
+  const result = await withStore(DRAFT_STORE_NAME, 'readonly', (store, done) => {
     const request = store.get(buildStorageKey(userId, examId))
     request.onerror = () => done(null)
     request.onsuccess = () => done(request.result || null)
@@ -94,11 +118,24 @@ export const loadDraft = async (userId, examId) => {
   return {
     ...result,
     answers: cloneAnswers(result.answers || {}),
-    markedQuestionIds: cloneMarkedQuestionIds(result.markedQuestionIds || [])
+    markedQuestionIds: cloneMarkedQuestionIds(result.markedQuestionIds || []),
+    examRuntime: cloneExamRuntime(result.examRuntime || {})
   }
 }
 
-export const saveDraft = async ({ userId, examId, answers, markedQuestionIds, updatedAt, lastSyncedAt, dirty }) => {
+export const saveDraft = async ({
+  userId,
+  examId,
+  answers,
+  markedQuestionIds,
+  updatedAt,
+  lastSyncedAt,
+  lastServerAckAt,
+  snapshotVersion,
+  dirty,
+  pendingSubmitIntent,
+  examRuntime
+}) => {
   if (!userId || !examId) {
     return null
   }
@@ -108,11 +145,15 @@ export const saveDraft = async ({ userId, examId, answers, markedQuestionIds, up
     examId: String(examId),
     answers: cloneAnswers(answers),
     markedQuestionIds: cloneMarkedQuestionIds(markedQuestionIds),
+    examRuntime: cloneExamRuntime(examRuntime),
     updatedAt: Number.isFinite(Number(updatedAt)) ? Number(updatedAt) : Date.now(),
     lastSyncedAt: Number.isFinite(Number(lastSyncedAt)) ? Number(lastSyncedAt) : null,
+    lastServerAckAt: lastServerAckAt || null,
+    snapshotVersion: Number.isFinite(Number(snapshotVersion)) ? Number(snapshotVersion) : 0,
+    pendingSubmitIntent: pendingSubmitIntent || null,
     dirty: Boolean(dirty)
   }
-  await withStore('readwrite', (store, done) => {
+  await withStore(DRAFT_STORE_NAME, 'readwrite', (store, done) => {
     const request = store.put(record)
     request.onerror = () => done(null)
     request.onsuccess = () => done(record)
@@ -120,25 +161,87 @@ export const saveDraft = async ({ userId, examId, answers, markedQuestionIds, up
   return record
 }
 
-export const markSynced = async (userId, examId, lastSyncedAt = Date.now()) => {
-  const existing = await loadDraft(userId, examId)
-  if (!existing) {
-    return null
-  }
-  return saveDraft({
-    ...existing,
-    lastSyncedAt,
-    dirty: false
-  })
-}
-
 export const clearDraft = async (userId, examId) => {
   if (!userId || !examId) {
     return
   }
-  await withStore('readwrite', (store, done) => {
+  await withStore(DRAFT_STORE_NAME, 'readwrite', (store, done) => {
     const request = store.delete(buildStorageKey(userId, examId))
     request.onerror = () => done(null)
     request.onsuccess = () => done(null)
   })
+}
+
+export const enqueueSyncItem = async ({ userId, examId, type, payload, occurredAt, nextAttemptAt }) => {
+  if (!userId || !examId || !type) {
+    return null
+  }
+  const record = {
+    examStorageKey: buildStorageKey(userId, examId),
+    userId: String(userId),
+    examId: String(examId),
+    type,
+    payload: payload || {},
+    occurredAt: occurredAt || Date.now(),
+    attemptCount: 0,
+    nextAttemptAt: nextAttemptAt || Date.now(),
+    lastError: ''
+  }
+  const saved = await withStore(QUEUE_STORE_NAME, 'readwrite', (store, done) => {
+    const request = store.add(record)
+    request.onerror = () => done(null)
+    request.onsuccess = () => done({ ...record, id: request.result })
+  })
+  return saved || record
+}
+
+export const listSyncItems = async (userId, examId) => {
+  if (!userId || !examId) {
+    return []
+  }
+  const storageKey = buildStorageKey(userId, examId)
+  const result = await withStore(QUEUE_STORE_NAME, 'readonly', (store, done) => {
+    const items = []
+    const index = store.index('byExam')
+    const request = index.openCursor(IDBKeyRange.only(storageKey))
+    request.onerror = () => done([])
+    request.onsuccess = () => {
+      const cursor = request.result
+      if (!cursor) {
+        done(items.sort((a, b) => (a.occurredAt || 0) - (b.occurredAt || 0)))
+        return
+      }
+      items.push(cursor.value)
+      cursor.continue()
+    }
+  })
+  return result || []
+}
+
+export const updateSyncItem = async (item) => {
+  if (!item?.id) {
+    return null
+  }
+  await withStore(QUEUE_STORE_NAME, 'readwrite', (store, done) => {
+    const request = store.put(item)
+    request.onerror = () => done(null)
+    request.onsuccess = () => done(item)
+  })
+  return item
+}
+
+export const deleteSyncItem = async (id) => {
+  if (!id) {
+    return
+  }
+  await withStore(QUEUE_STORE_NAME, 'readwrite', (store, done) => {
+    const request = store.delete(id)
+    request.onerror = () => done(null)
+    request.onsuccess = () => done(null)
+  })
+}
+
+export const clearSyncItems = async (userId, examId) => {
+  const items = await listSyncItems(userId, examId)
+  await Promise.all(items.map((item) => deleteSyncItem(item.id)))
 }

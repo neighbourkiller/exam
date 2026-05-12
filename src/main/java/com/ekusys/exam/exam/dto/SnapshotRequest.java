@@ -11,4 +11,6 @@ public class SnapshotRequest {
     private List<AnswerPayload> answers;
 
     private Long clientTimestamp;
+
+    private Long snapshotVersion;
 }

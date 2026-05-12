@@ -271,7 +271,9 @@
         <div class="timeline-meta">
           <p>班级：{{ formatClassNames(timeline.classNames) }}</p>
           <p>累计离屏：{{ formatDuration(timeline.totalOffscreenDurationMs) }}</p>
-          <p>最近快照：{{ formatDateTime(timeline.lastSnapshotTime) }}</p>
+          <p>最近服务端同步：{{ formatDateTime(timeline.lastSnapshotTime) }}</p>
+          <p>最长离线：{{ formatDuration(timelineOfflineDurationMs) }}</p>
+          <p>重放事件：{{ timelineHasReplayedEvents ? '存在' : '无' }}</p>
         </div>
 
         <div class="disposition-panel">
@@ -325,6 +327,7 @@
               <span>{{ formatDateTime(event.eventTime) }}</span>
             </div>
             <p class="timeline-item__duration">{{ event.durationMs ? formatDuration(event.durationMs) : '瞬时事件' }}</p>
+            <p v-if="formatEventContext(event)" class="timeline-item__context">{{ formatEventContext(event) }}</p>
             <div v-if="parseEvidence(event.evidenceJson).length" class="timeline-evidence">
               <figure
                 v-for="item in parseEvidence(event.evidenceJson)"
@@ -438,6 +441,16 @@ const onlineRate = computed(() => {
   }
   return Math.round((Number(overview.value?.answeringStudents || 0) / total) * 100)
 })
+const timelineHasReplayedEvents = computed(() =>
+  Boolean(timeline.value?.events?.some((event) => parsePayloadObject(event.payload)?.replayed))
+)
+const timelineOfflineDurationMs = computed(() => {
+  const durations = timeline.value?.events
+    ?.filter((event) => event.eventType === 'NETWORK_OFFLINE')
+    ?.map((event) => Number(event.durationMs || parsePayloadObject(event.payload)?.offlineDurationMs || 0))
+    ?.filter((value) => Number.isFinite(value) && value > 0) || []
+  return durations.length ? Math.max(...durations) : 0
+})
 
 const EVENT_TYPE_MAP = {
   WINDOW_BLUR: '窗口失去焦点',
@@ -478,6 +491,7 @@ const MEDIUM_RISK_EVENTS = new Set([
   'PASTE_ATTEMPT',
   'CUT_ATTEMPT',
   'CONTEXT_MENU',
+  'NETWORK_OFFLINE',
   'LONG_INACTIVITY',
   'CAMERA_TRACK_MUTED',
   'CAMERA_FRAME_DARK'
@@ -545,6 +559,18 @@ const formatDuration = (durationMs) => {
   return `${minutes}分${seconds}秒`
 }
 
+const parsePayloadObject = (payload) => {
+  if (!payload) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(payload)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
 const formatPayload = (payload) => {
   if (!payload) {
     return ''
@@ -554,6 +580,39 @@ const formatPayload = (payload) => {
   } catch {
     return payload
   }
+}
+
+const formatPayloadTime = (value) => {
+  if (!value) {
+    return ''
+  }
+  const numberValue = Number(value)
+  if (Number.isFinite(numberValue) && numberValue > 0) {
+    return formatDateTime(new Date(numberValue).toISOString())
+  }
+  return formatDateTime(value)
+}
+
+const formatEventContext = (event) => {
+  const payload = parsePayloadObject(event.payload)
+  if (!payload) {
+    return ''
+  }
+  const parts = []
+  if (payload.replayed) {
+    parts.push('恢复联网后重放')
+  }
+  if (payload.occurredAt) {
+    parts.push(`原始发生：${formatPayloadTime(payload.occurredAt)}`)
+  }
+  const offlineDurationMs = Number(payload.offlineDurationMs || 0)
+  if (Number.isFinite(offlineDurationMs) && offlineDurationMs > 0) {
+    parts.push(`离线约 ${formatDuration(offlineDurationMs)}`)
+  }
+  if (event.eventType === 'NETWORK_OFFLINE' && event.durationMs) {
+    parts.push(`断线 ${formatDuration(event.durationMs)}`)
+  }
+  return parts.join('，')
 }
 
 const parseEvidence = (evidenceJson) => {
@@ -1040,6 +1099,7 @@ onBeforeUnmount(() => {
 
 .event-item__body,
 .timeline-item__duration,
+.timeline-item__context,
 .timeline-meta p,
 .report-row span,
 .stat-row span {
@@ -1104,6 +1164,12 @@ onBeforeUnmount(() => {
 
 .timeline-meta p {
   margin: 0;
+}
+
+.timeline-item__context {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .disposition-panel {
