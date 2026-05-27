@@ -39,16 +39,52 @@
             </button>
           </nav>
 
-          <div class="student-sidebar__footer">
-            <div class="student-profile">
+          <div ref="studentAccountRef" class="student-sidebar__footer">
+            <transition name="student-account-menu">
+              <div
+                v-if="studentMenuOpen"
+                class="student-account-menu"
+                role="menu"
+                aria-label="学生账号菜单"
+              >
+                <div class="student-account-menu__header">
+                  <strong>{{ auth.username || '未登录' }}</strong>
+                  <span>学生账号</span>
+                </div>
+                <button type="button" class="student-account-menu__item" role="menuitem" @click="openPasswordDialog">
+                  <el-icon class="student-account-menu__icon"><Lock /></el-icon>
+                  <span>修改密码</span>
+                </button>
+                <div class="student-account-menu__divider"></div>
+                <button
+                  type="button"
+                  class="student-account-menu__item student-account-menu__item--danger"
+                  role="menuitem"
+                  @click="logout"
+                >
+                  <el-icon class="student-account-menu__icon"><SwitchButton /></el-icon>
+                  <span>退出登录</span>
+                </button>
+              </div>
+            </transition>
+
+            <button
+              type="button"
+              :class="['student-account-trigger', { 'is-open': studentMenuOpen }]"
+              :aria-expanded="studentMenuOpen"
+              aria-haspopup="menu"
+              @click="toggleStudentMenu"
+            >
               <div class="student-profile__avatar">{{ userInitial }}</div>
-              <div>
+              <div class="student-account-trigger__text">
                 <strong>{{ auth.username || '未登录' }}</strong>
                 <span>学生端</span>
               </div>
-            </div>
-            <button type="button" class="student-pwd-btn" @click="openPasswordDialog">修改密码</button>
-            <button type="button" class="student-logout" @click="logout">退出</button>
+              <el-icon class="student-account-trigger__chevron">
+                <ArrowDownBold v-if="studentMenuOpen" />
+                <ArrowUpBold v-else />
+              </el-icon>
+            </button>
           </div>
         </aside>
 
@@ -161,8 +197,9 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { ArrowDownBold, ArrowUpBold, Lock, SwitchButton } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { changePasswordApi, logoutApi } from '../api'
 import { useAuthStore } from '../stores/auth'
@@ -177,6 +214,8 @@ const isAdmin = computed(() => auth.roles.includes('ADMIN'))
 const isTeacher = computed(() => auth.roles.includes('TEACHER') || auth.roles.includes('ADMIN'))
 const isStudent = computed(() => auth.roles.includes('STUDENT'))
 const userInitial = computed(() => auth.username?.charAt(0)?.toUpperCase() || 'U')
+const studentAccountRef = ref(null)
+const studentMenuOpen = ref(false)
 const showPasswordDialog = ref(false)
 const changingPassword = ref(false)
 const passwordForm = reactive({
@@ -194,6 +233,27 @@ const onSelect = (index) => {
   router.push(index)
 }
 
+const closeStudentMenu = () => {
+  studentMenuOpen.value = false
+}
+
+const toggleStudentMenu = () => {
+  studentMenuOpen.value = !studentMenuOpen.value
+}
+
+const onStudentDocumentClick = (event) => {
+  if (!studentMenuOpen.value || studentAccountRef.value?.contains(event.target)) {
+    return
+  }
+  closeStudentMenu()
+}
+
+const onStudentMenuKeydown = (event) => {
+  if (event.key === 'Escape') {
+    closeStudentMenu()
+  }
+}
+
 const resetPasswordForm = () => {
   passwordForm.oldPassword = ''
   passwordForm.newPassword = ''
@@ -201,6 +261,7 @@ const resetPasswordForm = () => {
 }
 
 const openPasswordDialog = () => {
+  closeStudentMenu()
   resetPasswordForm()
   showPasswordDialog.value = true
 }
@@ -240,6 +301,7 @@ const handleChangePassword = async () => {
 }
 
 const logout = async () => {
+  closeStudentMenu()
   try {
     await logoutApi()
   } catch (error) {
@@ -249,6 +311,16 @@ const logout = async () => {
     router.push('/login')
   }
 }
+
+onMounted(() => {
+  document.addEventListener('click', onStudentDocumentClick)
+  document.addEventListener('keydown', onStudentMenuKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onStudentDocumentClick)
+  document.removeEventListener('keydown', onStudentMenuKeydown)
+})
 </script>
 
 <style scoped>
@@ -388,75 +460,173 @@ const logout = async () => {
 }
 
 .student-sidebar__footer {
+  position: relative;
+  z-index: 20;
   margin-top: auto;
-  display: grid;
-  gap: 12px;
   padding: 16px;
   border-top: 1px solid var(--student-line);
 }
 
-.student-profile {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.student-profile__avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f2ede5;
-  border: 1px solid #d9cec0;
-  color: #15130f;
-  font-weight: 700;
-}
-
-.student-profile strong,
-.student-profile span {
-  display: block;
-}
-
-.student-profile strong {
-  font-size: 14px;
+.student-account-menu {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: calc(100% + 10px);
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid rgba(47, 45, 42, 0.14);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 18px 42px rgba(47, 38, 28, 0.18), 0 2px 8px rgba(47, 38, 28, 0.08);
   color: var(--student-text);
 }
 
-.student-profile span {
-  margin-top: 2px;
+.student-account-menu__header {
+  min-width: 0;
+  padding: 4px 8px 10px;
+}
+
+.student-account-menu__header strong,
+.student-account-menu__header span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.student-account-menu__header strong {
+  font-size: 14px;
+  color: #8a847d;
+}
+
+.student-account-menu__header span {
+  margin-top: 4px;
   font-size: 12px;
   color: var(--student-muted);
 }
 
-.student-logout {
-  height: 40px;
-  border: 1px solid #efc4b8;
-  border-radius: 12px;
-  background: #fff7f2;
-  color: var(--student-accent-dark);
-  font: inherit;
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.student-pwd-btn {
-  height: 40px;
-  border: 1px solid #d9cec0;
-  border-radius: 12px;
-  background: #fffdfa;
+.student-account-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
   color: var(--student-text);
   font: inherit;
   font-size: 15px;
-  font-weight: 700;
+  text-align: left;
   cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-.student-pwd-btn:hover {
-  border-color: var(--student-accent);
-  color: var(--student-accent-dark);
+.student-account-menu__item:hover {
+  background: #f3eee6;
+}
+
+.student-account-menu__item--danger {
+  color: #9d4830;
+}
+
+.student-account-menu__item--danger:hover {
+  background: #fff3ed;
+}
+
+.student-account-menu__icon {
+  width: 18px;
+  font-size: 18px;
+  color: currentColor;
+}
+
+.student-account-menu__divider {
+  height: 1px;
+  margin: 4px 8px;
+  background: #ece4d8;
+}
+
+.student-account-trigger {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 66px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--student-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.student-account-trigger:hover,
+.student-account-trigger.is-open {
+  background: #f1ece4;
+  border-color: #e0d6c8;
+}
+
+.student-account-trigger.is-open {
+  box-shadow: inset 0 0 0 1px rgba(207, 107, 78, 0.12);
+}
+
+.student-profile__avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  background: var(--student-text);
+  color: var(--student-bg);
+  font-weight: 700;
+}
+
+.student-account-trigger__text {
+  min-width: 0;
+  flex: 1;
+}
+
+.student-account-trigger__text strong,
+.student-account-trigger__text span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.student-account-trigger__text strong {
+  font-size: 15px;
+  color: var(--student-text);
+}
+
+.student-account-trigger__text span {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--student-muted);
+}
+
+.student-account-trigger__chevron {
+  flex: 0 0 auto;
+  color: var(--student-muted);
+  font-size: 12px;
+}
+
+.student-account-menu-enter-active,
+.student-account-menu-leave-active {
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.student-account-menu-enter-from,
+.student-account-menu-leave-to {
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
 }
 
 .student-main {
@@ -646,9 +816,24 @@ const logout = async () => {
   }
 
   .student-nav__icon,
-  .student-sidebar__footer,
   .student-main__bar {
     display: none;
+  }
+
+  .student-sidebar__footer {
+    margin-top: 0;
+    padding: 10px 16px 14px;
+    border-top: none;
+  }
+
+  .student-account-menu {
+    top: calc(100% - 4px);
+    bottom: auto;
+  }
+
+  .student-account-trigger {
+    min-height: 58px;
+    padding: 8px 10px;
   }
 
   .student-content-wrapper {

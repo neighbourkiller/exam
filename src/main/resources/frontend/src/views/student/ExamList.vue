@@ -1,7 +1,6 @@
 <template>
   <div class="student-exams-page">
     <section class="student-hero">
-      <div class="student-hero__plan">Student workspace</div>
       <h1><span class="hero-burst" aria-hidden="true"></span><span>{{ greetingText }}，{{ auth.username || 'student' }}</span></h1>
 
       <div class="exam-command-panel">
@@ -208,19 +207,8 @@ onMounted(load)
   text-align: center;
 }
 
-.student-hero__plan {
-  display: inline-flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 13px;
-  border-radius: 10px;
-  background: var(--student-soft, #eee8df);
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
 .student-hero h1 {
-  margin: 26px 0 0;
+  margin: 0;
   display: flex;
   align-items: center;
   justify-content: center;
