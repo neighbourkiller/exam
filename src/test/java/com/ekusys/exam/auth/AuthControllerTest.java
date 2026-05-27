@@ -122,4 +122,20 @@ class AuthControllerTest {
             .andExpect(jsonPath("$.data.userId").value(1001))
             .andExpect(jsonPath("$.data.username").value("alice"));
     }
+
+    @Test
+    void changePasswordShouldClearRefreshCookie() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/change-password")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(java.util.Map.of(
+                    "oldPassword", "old-password",
+                    "newPassword", "new-password"
+                ))))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")))
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.message").value("密码修改成功，请重新登录"));
+
+        verify(authService).changePassword(any());
+    }
 }

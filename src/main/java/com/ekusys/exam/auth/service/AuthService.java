@@ -2,23 +2,26 @@ package com.ekusys.exam.auth.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ekusys.exam.auth.dto.AuthTokens;
+import com.ekusys.exam.auth.dto.ChangePasswordRequest;
 import com.ekusys.exam.auth.dto.LoginRequest;
 import com.ekusys.exam.auth.dto.MeResponse;
 import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.common.security.JwtTokenProvider;
 import com.ekusys.exam.common.security.LoginUser;
-import io.jsonwebtoken.JwtException;
 import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.repository.entity.User;
 import com.ekusys.exam.repository.mapper.UserMapper;
+import io.jsonwebtoken.JwtException;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AuthService {
@@ -29,15 +32,18 @@ public class AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final UserMapper userMapper;
     private final RefreshTokenSessionService refreshTokenSessionService;
+    private final PasswordEncoder passwordEncoder;
 
     public AuthService(AuthenticationManager authenticationManager,
                        JwtTokenProvider jwtTokenProvider,
                        UserMapper userMapper,
-                       RefreshTokenSessionService refreshTokenSessionService) {
+                       RefreshTokenSessionService refreshTokenSessionService,
+                       PasswordEncoder passwordEncoder) {
         this.authenticationManager = authenticationManager;
         this.jwtTokenProvider = jwtTokenProvider;
         this.userMapper = userMapper;
         this.refreshTokenSessionService = refreshTokenSessionService;
+        this.passwordEncoder = passwordEncoder;
     }
 
     public AuthTokens login(LoginRequest request) {
@@ -80,6 +86,7 @@ public class AuthService {
             .username(user.getUsername())
             .enabled(Boolean.TRUE.equals(user.getEnabled()))
             .roles(userMapper.selectRoleCodes(user.getId()))
+            .tokenVersion(user.getTokenVersion() == null ? 0L : user.getTokenVersion())
             .build();
         log.info("Refresh token success: userId={}, username={}", latestUser.getUserId(), latestUser.getUsername());
         return issueTokens(latestUser);
@@ -97,6 +104,29 @@ public class AuthService {
             .realName(user == null ? current.getUsername() : user.getRealName())
             .roles(current.getRoles())
             .build();
+    }
+
+    @Transactional
+    public void changePassword(ChangePasswordRequest request) {
+        LoginUser current = SecurityUtils.getCurrentUser();
+        if (current == null) {
+            throw new BusinessException("未登录");
+        }
+        User user = userMapper.selectById(current.getUserId());
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        if (!passwordEncoder.matches(request.getOldPassword(), user.getPassword())) {
+            throw new BusinessException("旧密码错误");
+        }
+        if (request.getOldPassword().equals(request.getNewPassword())) {
+            throw new BusinessException("新密码不能与旧密码相同");
+        }
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setTokenVersion((user.getTokenVersion() == null ? 0L : user.getTokenVersion()) + 1);
+        userMapper.updateById(user);
+        refreshTokenSessionService.revoke(current.getUserId());
+        log.info("User changed password: userId={}, username={}", current.getUserId(), current.getUsername());
     }
 
     public void logout(String refreshToken) {

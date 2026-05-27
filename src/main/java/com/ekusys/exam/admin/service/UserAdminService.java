@@ -11,8 +11,11 @@ import com.ekusys.exam.common.api.PageResponse;
 import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.repository.entity.User;
 import com.ekusys.exam.repository.mapper.UserMapper;
+import jakarta.annotation.PostConstruct;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -21,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class UserAdminService {
 
+    private static final Logger log = LoggerFactory.getLogger(UserAdminService.class);
     private static final String ROLE_STUDENT = "STUDENT";
 
     private final UserMapper userMapper;
@@ -39,6 +43,15 @@ public class UserAdminService {
         this.passwordEncoder = passwordEncoder;
         this.roleAdminService = roleAdminService;
         this.userProfileSyncService = userProfileSyncService;
+    }
+
+    @PostConstruct
+    public void warnDefaultPassword() {
+        if (defaultPassword == null || defaultPassword.isBlank()) {
+            log.warn("APP_DEFAULT_PASSWORD 未配置。批量创建用户时若不指定密码将报错。请设置环境变量 APP_DEFAULT_PASSWORD。");
+        } else if (defaultPassword.length() < 8) {
+            log.warn("APP_DEFAULT_PASSWORD 长度不足 8 位，建议使用更强的默认密码。");
+        }
     }
 
     public PageResponse<UserView> queryUsers(UserQueryRequest request) {

@@ -21,6 +21,7 @@ public class LoginUser implements UserDetails {
     private String password;
     private boolean enabled;
     private List<String> roles;
+    private Long tokenVersion;
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {

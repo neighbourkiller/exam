@@ -47,6 +47,7 @@
                 <span>学生端</span>
               </div>
             </div>
+            <button type="button" class="student-pwd-btn" @click="openPasswordDialog">修改密码</button>
             <button type="button" class="student-logout" @click="logout">退出</button>
           </div>
         </aside>
@@ -111,6 +112,7 @@
               <div class="avatar">{{ userInitial }}</div>
               <span class="username">{{ auth.username || '未登录' }}</span>
             </div>
+            <el-button size="small" plain round @click="openPasswordDialog" class="pwd-btn">修改密码</el-button>
             <el-button size="small" type="danger" plain round @click="logout" class="logout-btn">退出</el-button>
           </div>
         </div>
@@ -131,13 +133,38 @@
         </router-view>
       </main>
     </template>
+
+    <el-dialog
+      v-model="showPasswordDialog"
+      title="修改密码"
+      width="min(420px, calc(100vw - 32px))"
+      :close-on-click-modal="false"
+      @closed="resetPasswordForm"
+    >
+      <el-form :model="passwordForm" label-position="top" @submit.prevent="handleChangePassword">
+        <el-form-item label="当前密码" required>
+          <el-input v-model="passwordForm.oldPassword" type="password" show-password placeholder="请输入当前密码" />
+        </el-form-item>
+        <el-form-item label="新密码" required>
+          <el-input v-model="passwordForm.newPassword" type="password" show-password placeholder="6-64 位新密码" />
+        </el-form-item>
+        <el-form-item label="确认新密码" required>
+          <el-input v-model="passwordForm.confirmPassword" type="password" show-password placeholder="再次输入新密码" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showPasswordDialog = false">取消</el-button>
+        <el-button type="primary" :loading="changingPassword" @click="handleChangePassword">确认修改</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
-import { logoutApi } from '../api'
+import { changePasswordApi, logoutApi } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
@@ -150,6 +177,13 @@ const isAdmin = computed(() => auth.roles.includes('ADMIN'))
 const isTeacher = computed(() => auth.roles.includes('TEACHER') || auth.roles.includes('ADMIN'))
 const isStudent = computed(() => auth.roles.includes('STUDENT'))
 const userInitial = computed(() => auth.username?.charAt(0)?.toUpperCase() || 'U')
+const showPasswordDialog = ref(false)
+const changingPassword = ref(false)
+const passwordForm = reactive({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: ''
+})
 const studentNavItems = [
   { index: '/student/exams', label: '我的考试', icon: 'clipboard' },
   { index: '/student/environment-check', label: '环境检测', icon: 'shield' },
@@ -158,6 +192,51 @@ const studentNavItems = [
 
 const onSelect = (index) => {
   router.push(index)
+}
+
+const resetPasswordForm = () => {
+  passwordForm.oldPassword = ''
+  passwordForm.newPassword = ''
+  passwordForm.confirmPassword = ''
+}
+
+const openPasswordDialog = () => {
+  resetPasswordForm()
+  showPasswordDialog.value = true
+}
+
+const handleChangePassword = async () => {
+  if (!passwordForm.oldPassword) {
+    ElMessage.warning('请输入当前密码')
+    return
+  }
+  if (!passwordForm.newPassword || passwordForm.newPassword.length < 6) {
+    ElMessage.warning('新密码长度至少 6 位')
+    return
+  }
+  if (passwordForm.newPassword.length > 64) {
+    ElMessage.warning('新密码长度不能超过 64 位')
+    return
+  }
+  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+    ElMessage.warning('两次输入的新密码不一致')
+    return
+  }
+  changingPassword.value = true
+  try {
+    await changePasswordApi({
+      oldPassword: passwordForm.oldPassword,
+      newPassword: passwordForm.newPassword
+    })
+    ElMessage.success('密码修改成功，请重新登录')
+    showPasswordDialog.value = false
+    auth.clear()
+    router.push('/login')
+  } catch {
+    // Error messages are handled by the HTTP interceptor.
+  } finally {
+    changingPassword.value = false
+  }
 }
 
 const logout = async () => {
@@ -363,6 +442,23 @@ const logout = async () => {
   cursor: pointer;
 }
 
+.student-pwd-btn {
+  height: 40px;
+  border: 1px solid #d9cec0;
+  border-radius: 12px;
+  background: #fffdfa;
+  color: var(--student-text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.student-pwd-btn:hover {
+  border-color: var(--student-accent);
+  color: var(--student-accent-dark);
+}
+
 .student-main {
   min-width: 0;
   display: flex;
@@ -495,6 +591,10 @@ const logout = async () => {
 }
 
 .logout-btn {
+  font-weight: 600;
+}
+
+.pwd-btn {
   font-weight: 600;
 }
 

@@ -2,6 +2,7 @@ package com.ekusys.exam.auth.controller;
 
 import com.ekusys.exam.auth.dto.AuthResponse;
 import com.ekusys.exam.auth.dto.AuthTokens;
+import com.ekusys.exam.auth.dto.ChangePasswordRequest;
 import com.ekusys.exam.auth.dto.LoginRequest;
 import com.ekusys.exam.auth.dto.MeResponse;
 import com.ekusys.exam.auth.service.AuthCookieService;
@@ -60,5 +61,13 @@ public class AuthController {
     @GetMapping("/me")
     public ApiResponse<MeResponse> me() {
         return ApiResponse.ok(authService.me());
+    }
+
+    @PostMapping("/change-password")
+    public ApiResponse<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request,
+                                            HttpServletResponse response) {
+        authService.changePassword(request);
+        authCookieService.clearRefreshToken(response);
+        return ApiResponse.ok("密码修改成功，请重新登录", null);
     }
 }

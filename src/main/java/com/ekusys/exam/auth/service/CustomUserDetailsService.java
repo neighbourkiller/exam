@@ -36,6 +36,7 @@ public class CustomUserDetailsService implements UserDetailsService {
             .password(user.getPassword())
             .enabled(Boolean.TRUE.equals(user.getEnabled()))
             .roles(roles)
+            .tokenVersion(user.getTokenVersion() == null ? 0L : user.getTokenVersion())
             .build();
     }
 }

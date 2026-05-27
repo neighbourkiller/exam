@@ -4,6 +4,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -11,15 +12,35 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 import javax.crypto.SecretKey;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 @Component
 public class JwtTokenProvider {
 
+    private static final int MIN_SECRET_LENGTH = 32;
+    private static final Logger log = LoggerFactory.getLogger(JwtTokenProvider.class);
+
     private final JwtProperties properties;
 
     public JwtTokenProvider(JwtProperties properties) {
         this.properties = properties;
+    }
+
+    @PostConstruct
+    public void validateSecret() {
+        String secret = properties.getSecret();
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException(
+                "JWT secret 未配置。请设置环境变量 JWT_SECRET（至少 " + MIN_SECRET_LENGTH + " 个字符）");
+        }
+        int secretLength = secret.getBytes(StandardCharsets.UTF_8).length;
+        if (secretLength < MIN_SECRET_LENGTH) {
+            throw new IllegalStateException(
+                "JWT secret 长度不足 " + MIN_SECRET_LENGTH + " 字节，存在安全风险。请设置一个更长的 JWT_SECRET 环境变量");
+        }
+        log.info("JWT secret 校验通过 (长度={}字节)", secretLength);
     }
 
     public String createAccessToken(LoginUser user) {
@@ -31,6 +52,7 @@ public class JwtTokenProvider {
             .claim("uid", user.getUserId())
             .claim("roles", user.getRoles())
             .claim("typ", "access")
+            .claim("tokenVersion", tokenVersion(user))
             .id(UUID.randomUUID().toString())
             .issuedAt(Date.from(now))
             .expiration(Date.from(expires))
@@ -47,6 +69,7 @@ public class JwtTokenProvider {
             .claim("uid", user.getUserId())
             .claim("roles", user.getRoles())
             .claim("typ", "refresh")
+            .claim("tokenVersion", tokenVersion(user))
             .id(tokenId)
             .issuedAt(Date.from(now))
             .expiration(Date.from(expires))
@@ -71,6 +94,7 @@ public class JwtTokenProvider {
             .username(claims.getSubject())
             .enabled(true)
             .roles(roles)
+            .tokenVersion(readTokenVersion(claims))
             .build();
     }
 
@@ -97,6 +121,21 @@ public class JwtTokenProvider {
 
     private SecretKey getSignKey() {
         byte[] raw = properties.getSecret().getBytes(StandardCharsets.UTF_8);
-        return Keys.hmacShaKeyFor(raw.length >= 32 ? raw : java.util.Arrays.copyOf(raw, 32));
+        return Keys.hmacShaKeyFor(raw);
+    }
+
+    private long tokenVersion(LoginUser user) {
+        return user == null || user.getTokenVersion() == null ? 0L : user.getTokenVersion();
+    }
+
+    private Long readTokenVersion(Claims claims) {
+        Object value = claims.get("tokenVersion");
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null) {
+            return 0L;
+        }
+        return Long.valueOf(value.toString());
     }
 }

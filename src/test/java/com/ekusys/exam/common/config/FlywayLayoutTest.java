@@ -18,7 +18,8 @@ class FlywayLayoutTest {
         assertTrue(yaml.contains("mode: never"));
         assertTrue(yaml.contains("locations: classpath:db/migration"));
         assertTrue(yaml.contains("baseline-version: 3"));
-        assertTrue(yaml.contains("secret: ${JWT_SECRET:}"));
+        assertTrue(yaml.contains("secret: ${JWT_SECRET:dev-only-exam-secret-key-32bytes!}"));
+        assertTrue(yaml.contains("default-password: ${APP_DEFAULT_PASSWORD:Exam@2026}"));
     }
 
     @Test

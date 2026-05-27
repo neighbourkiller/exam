@@ -1,10 +1,19 @@
-HELP.md
+### Java / Maven ###
 target/
-.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
-GEMINI.md
-### STS ###
+*.class
+*.jar
+*.war
+*.ear
+*.log
+hs_err_pid*
+replay_pid*
+
+### Spring Boot ###
+.mvn/wrapper/maven-wrapper.jar
+
+### STS (Spring Tool Suite) ###
 .apt_generated
 .classpath
 .factorypath
@@ -14,10 +23,11 @@ GEMINI.md
 .sts4-cache
 
 ### IntelliJ IDEA ###
-.idea
+.idea/
 *.iws
 *.iml
 *.ipr
+out/
 
 ### NetBeans ###
 /nbproject/private/
@@ -32,28 +42,32 @@ build/
 ### VS Code ###
 .vscode/
 
-# Frontend (Vite/Vue)
+### Frontend (Vite / Vue) ###
 src/main/resources/frontend/node_modules/
 src/main/resources/frontend/dist/
 src/main/resources/frontend/.vite/
 src/main/resources/frontend/*.log
 
-# Local AI/tooling cache
-.codex/
+### Environment & Secrets ###
 .env
 .env.local
+.env.*.local
 
-.github/
-# Claude
+### AI / Agent Tooling ###
 CLAUDE.md
 .claude/
 .agents/
-skills-lock.json
+.codex/
+.codex_tmp/
 .omx/
-面试.md
-resume_images
+.chrome-tmp*/
+skills-lock.json
+
+### GitHub Actions (not used yet) ###
+.github/
+
+### Personal / Non-project Files ###
+docs/面试/面试.md
+docs/面试/resume_images/
 resume_page.png
-.codex_tmp
-.chrome-tmp
-.chrome-tmp2
 docs/

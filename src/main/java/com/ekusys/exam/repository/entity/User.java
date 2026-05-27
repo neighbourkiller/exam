@@ -15,4 +15,5 @@ public class User extends BaseEntity {
     private String password;
     private String realName;
     private Boolean enabled;
+    private Long tokenVersion;
 }

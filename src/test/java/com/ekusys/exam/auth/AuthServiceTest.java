@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.ekusys.exam.auth.dto.ChangePasswordRequest;
 import com.ekusys.exam.auth.dto.AuthTokens;
 import com.ekusys.exam.auth.dto.LoginRequest;
 import com.ekusys.exam.auth.service.AuthService;
@@ -19,14 +20,18 @@ import com.ekusys.exam.repository.entity.User;
 import com.ekusys.exam.repository.mapper.UserMapper;
 import java.time.Instant;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
@@ -43,11 +48,19 @@ class AuthServiceTest {
     @Mock
     private RefreshTokenSessionService refreshTokenSessionService;
 
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
     private AuthService authService;
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(authenticationManager, jwtTokenProvider, userMapper, refreshTokenSessionService);
+        authService = new AuthService(authenticationManager, jwtTokenProvider, userMapper, refreshTokenSessionService, passwordEncoder);
+    }
+
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -143,5 +156,99 @@ class AuthServiceTest {
         authService.logout("refresh-token");
 
         verify(refreshTokenSessionService, never()).revoke(any());
+    }
+
+    @Test
+    void changePasswordShouldUpdateEncodedPassword() {
+        LoginUser current = mockCurrentUser();
+        User user = user(current.getUserId(), current.getUsername(), "encoded-old");
+        when(userMapper.selectById(current.getUserId())).thenReturn(user);
+        when(passwordEncoder.matches("old-password", "encoded-old")).thenReturn(true);
+        when(passwordEncoder.encode("new-password")).thenReturn("encoded-new");
+
+        authService.changePassword(changePasswordRequest("old-password", "new-password"));
+
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userMapper).updateById(userCaptor.capture());
+        assertEquals("encoded-new", userCaptor.getValue().getPassword());
+        assertEquals(1L, userCaptor.getValue().getTokenVersion());
+    }
+
+    @Test
+    void changePasswordShouldRejectWrongOldPassword() {
+        LoginUser current = mockCurrentUser();
+        User user = user(current.getUserId(), current.getUsername(), "encoded-old");
+        when(userMapper.selectById(current.getUserId())).thenReturn(user);
+        when(passwordEncoder.matches("bad-password", "encoded-old")).thenReturn(false);
+
+        BusinessException exception = assertThrows(
+            BusinessException.class,
+            () -> authService.changePassword(changePasswordRequest("bad-password", "new-password"))
+        );
+
+        assertEquals("旧密码错误", exception.getMessage());
+        verify(userMapper, never()).updateById(any(User.class));
+        verify(refreshTokenSessionService, never()).revoke(any());
+    }
+
+    @Test
+    void changePasswordShouldRejectSamePassword() {
+        LoginUser current = mockCurrentUser();
+        User user = user(current.getUserId(), current.getUsername(), "encoded-old");
+        when(userMapper.selectById(current.getUserId())).thenReturn(user);
+        when(passwordEncoder.matches("same-password", "encoded-old")).thenReturn(true);
+
+        BusinessException exception = assertThrows(
+            BusinessException.class,
+            () -> authService.changePassword(changePasswordRequest("same-password", "same-password"))
+        );
+
+        assertEquals("新密码不能与旧密码相同", exception.getMessage());
+        verify(passwordEncoder, never()).encode(any());
+        verify(userMapper, never()).updateById(any(User.class));
+        verify(refreshTokenSessionService, never()).revoke(any());
+    }
+
+    @Test
+    void changePasswordShouldRevokeRefreshTokensAfterUpdate() {
+        LoginUser current = mockCurrentUser();
+        User user = user(current.getUserId(), current.getUsername(), "encoded-old");
+        when(userMapper.selectById(current.getUserId())).thenReturn(user);
+        when(passwordEncoder.matches("old-password", "encoded-old")).thenReturn(true);
+        when(passwordEncoder.encode("new-password")).thenReturn("encoded-new");
+
+        authService.changePassword(changePasswordRequest("old-password", "new-password"));
+
+        verify(refreshTokenSessionService).revoke(current.getUserId());
+    }
+
+    private LoginUser mockCurrentUser() {
+        LoginUser loginUser = LoginUser.builder()
+            .userId(1001L)
+            .username("alice")
+            .roles(List.of("STUDENT"))
+            .enabled(true)
+            .build();
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken(loginUser, null, loginUser.getAuthorities())
+        );
+        return loginUser;
+    }
+
+    private User user(Long id, String username, String password) {
+        User user = new User();
+        user.setId(id);
+        user.setUsername(username);
+        user.setPassword(password);
+        user.setEnabled(true);
+        user.setTokenVersion(0L);
+        return user;
+    }
+
+    private ChangePasswordRequest changePasswordRequest(String oldPassword, String newPassword) {
+        ChangePasswordRequest request = new ChangePasswordRequest();
+        request.setOldPassword(oldPassword);
+        request.setNewPassword(newPassword);
+        return request;
     }
 }

@@ -1,5 +1,7 @@
 package com.ekusys.exam.common.security;
 
+import com.ekusys.exam.repository.entity.User;
+import com.ekusys.exam.repository.mapper.UserMapper;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -17,9 +19,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider tokenProvider;
+    private final UserMapper userMapper;
 
-    public JwtAuthenticationFilter(JwtTokenProvider tokenProvider) {
+    public JwtAuthenticationFilter(JwtTokenProvider tokenProvider, UserMapper userMapper) {
         this.tokenProvider = tokenProvider;
+        this.userMapper = userMapper;
     }
 
     @Override
@@ -35,6 +39,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     return;
                 }
                 LoginUser user = tokenProvider.parseLoginUser(token);
+                if (!isCurrentAccessToken(user)) {
+                    SecurityContextHolder.clearContext();
+                    filterChain.doFilter(request, response);
+                    return;
+                }
                 UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
@@ -44,5 +53,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
         }
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isCurrentAccessToken(LoginUser loginUser) {
+        if (loginUser == null || loginUser.getUserId() == null) {
+            return false;
+        }
+        User user = userMapper.selectById(loginUser.getUserId());
+        if (user == null || Boolean.FALSE.equals(user.getEnabled())) {
+            return false;
+        }
+        long currentVersion = user.getTokenVersion() == null ? 0L : user.getTokenVersion();
+        long tokenVersion = loginUser.getTokenVersion() == null ? 0L : loginUser.getTokenVersion();
+        return currentVersion == tokenVersion;
     }
 }
