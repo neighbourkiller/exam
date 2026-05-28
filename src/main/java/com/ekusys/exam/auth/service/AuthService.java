@@ -16,6 +16,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
@@ -53,6 +54,13 @@ public class AuthService {
                 new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
             );
         } catch (AuthenticationException ex) {
+            BusinessException businessException = findBusinessException(ex);
+            if (businessException != null) {
+                throw businessException;
+            }
+            if (ex instanceof DisabledException) {
+                throw new BusinessException("账号已被禁用，请联系管理员");
+            }
             throw new BusinessException("用户名或密码错误");
         }
         LoginUser user = (LoginUser) authentication.getPrincipal();
@@ -155,6 +163,17 @@ public class AuthService {
             .tokenType("Bearer")
             .roles(user.getRoles())
             .build();
+    }
+
+    private BusinessException findBusinessException(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof BusinessException businessException) {
+                return businessException;
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 }
 

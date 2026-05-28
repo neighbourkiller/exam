@@ -127,6 +127,7 @@ const form = reactive({
 })
 
 const onSubmit = async () => {
+  if (loading.value) return
   loading.value = true
   try {
     const tokens = await loginApi(form)
@@ -144,9 +145,8 @@ const onSubmit = async () => {
     } else {
       router.push('/teacher/questions')
     }
-  } catch (err) {
-    console.error(err)
-    ElMessage.error(err.message || '登录失败，请检查账号密码')
+  } catch {
+    // Error messages are handled by the HTTP interceptor.
   } finally {
     loading.value = false
   }

@@ -27,7 +27,7 @@ public class CustomUserDetailsService implements UserDetailsService {
             throw new UsernameNotFoundException("用户不存在");
         }
         if (Boolean.FALSE.equals(user.getEnabled())) {
-            throw new BusinessException("用户已被禁用");
+            throw new BusinessException("账号已被禁用，请联系管理员");
         }
         List<String> roles = userMapper.selectRoleCodes(user.getId());
         return LoginUser.builder()

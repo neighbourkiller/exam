@@ -28,6 +28,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.InternalAuthenticationServiceException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -85,6 +87,28 @@ class AuthServiceTest {
         assertEquals("access-token", response.getAccessToken());
         assertEquals("refresh-token", response.getRefreshToken());
         verify(refreshTokenSessionService).store(eq(1001L), any(), eq(Instant.parse("2026-04-05T00:00:00Z")));
+    }
+
+    @Test
+    void loginShouldKeepDisabledAccountMessage() {
+        LoginRequest request = loginRequest("alice", "secret");
+        BusinessException disabled = new BusinessException("账号已被禁用，请联系管理员");
+        when(authenticationManager.authenticate(any()))
+            .thenThrow(new InternalAuthenticationServiceException(disabled.getMessage(), disabled));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> authService.login(request));
+
+        assertEquals("账号已被禁用，请联系管理员", exception.getMessage());
+    }
+
+    @Test
+    void loginShouldHideBadCredentialDetails() {
+        LoginRequest request = loginRequest("alice", "bad-password");
+        when(authenticationManager.authenticate(any())).thenThrow(new BadCredentialsException("Bad credentials"));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> authService.login(request));
+
+        assertEquals("用户名或密码错误", exception.getMessage());
     }
 
     @Test
@@ -249,6 +273,13 @@ class AuthServiceTest {
         ChangePasswordRequest request = new ChangePasswordRequest();
         request.setOldPassword(oldPassword);
         request.setNewPassword(newPassword);
+        return request;
+    }
+
+    private LoginRequest loginRequest(String username, String password) {
+        LoginRequest request = new LoginRequest();
+        request.setUsername(username);
+        request.setPassword(password);
         return request;
     }
 }
