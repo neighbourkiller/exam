@@ -13,6 +13,7 @@ public class UserView {
     private String realName;
     private Boolean enabled;
     private String studentNo;
+    private String enrollmentYear;
     private List<TeachingClassView> teachingClasses;
     private List<RoleView> roles;
 }

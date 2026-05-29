@@ -11,12 +11,15 @@ import static org.mockito.Mockito.when;
 import com.ekusys.exam.auth.dto.ChangePasswordRequest;
 import com.ekusys.exam.auth.dto.AuthTokens;
 import com.ekusys.exam.auth.dto.LoginRequest;
+import com.ekusys.exam.auth.dto.MeResponse;
 import com.ekusys.exam.auth.service.AuthService;
 import com.ekusys.exam.auth.service.RefreshTokenSessionService;
 import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.common.security.JwtTokenProvider;
 import com.ekusys.exam.common.security.LoginUser;
+import com.ekusys.exam.repository.entity.StudentProfile;
 import com.ekusys.exam.repository.entity.User;
+import com.ekusys.exam.repository.mapper.StudentProfileMapper;
 import com.ekusys.exam.repository.mapper.UserMapper;
 import java.time.Instant;
 import java.util.List;
@@ -48,6 +51,9 @@ class AuthServiceTest {
     private UserMapper userMapper;
 
     @Mock
+    private StudentProfileMapper studentProfileMapper;
+
+    @Mock
     private RefreshTokenSessionService refreshTokenSessionService;
 
     @Mock
@@ -57,7 +63,7 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(authenticationManager, jwtTokenProvider, userMapper, refreshTokenSessionService, passwordEncoder);
+        authService = new AuthService(authenticationManager, jwtTokenProvider, userMapper, studentProfileMapper, refreshTokenSessionService, passwordEncoder);
     }
 
     @AfterEach
@@ -109,6 +115,27 @@ class AuthServiceTest {
         BusinessException exception = assertThrows(BusinessException.class, () -> authService.login(request));
 
         assertEquals("用户名或密码错误", exception.getMessage());
+    }
+
+    @Test
+    void meShouldReturnStudentProfileFields() {
+        LoginUser current = mockCurrentUser();
+        User user = user(current.getUserId(), current.getUsername(), "encoded-password");
+        user.setRealName("Alice Zhang");
+        StudentProfile profile = new StudentProfile();
+        profile.setUserId(current.getUserId());
+        profile.setStudentNo("S2026001");
+        profile.setEnrollmentYear("2026");
+
+        when(userMapper.selectOne(any())).thenReturn(user);
+        when(studentProfileMapper.selectOne(any())).thenReturn(profile);
+
+        MeResponse response = authService.me();
+
+        assertEquals("Alice Zhang", response.getRealName());
+        assertEquals("alice", response.getUsername());
+        assertEquals("S2026001", response.getStudentNo());
+        assertEquals("2026", response.getEnrollmentYear());
     }
 
     @Test

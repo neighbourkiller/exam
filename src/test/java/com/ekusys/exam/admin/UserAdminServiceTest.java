@@ -2,20 +2,28 @@ package com.ekusys.exam.admin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ekusys.exam.admin.dto.UserCreateRequest;
 import com.ekusys.exam.admin.dto.UserUpdateRequest;
+import com.ekusys.exam.admin.dto.UserQueryRequest;
+import com.ekusys.exam.admin.dto.UserView;
 import com.ekusys.exam.admin.service.RoleAdminService;
 import com.ekusys.exam.admin.service.UserAdminService;
 import com.ekusys.exam.admin.service.UserProfileSyncService;
+import com.ekusys.exam.common.api.PageResponse;
 import com.ekusys.exam.common.exception.BusinessException;
+import com.ekusys.exam.repository.entity.StudentProfile;
 import com.ekusys.exam.repository.entity.User;
 import com.ekusys.exam.repository.mapper.UserMapper;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -75,6 +83,7 @@ class UserAdminServiceTest {
         request.setRoleIds(List.of(3L));
         request.setTeachingClassIds(List.of(3301L));
         request.setStudentNo("S001");
+        request.setEnrollmentYear("2026");
 
         Long userId = userAdminService.createUser(request);
 
@@ -83,7 +92,7 @@ class UserAdminServiceTest {
         verify(userMapper).insert(captor.capture());
         assertEquals("encoded", captor.getValue().getPassword());
         verify(roleAdminService).assignRoles(1001L, List.of(3L), List.of(3301L));
-        verify(userProfileSyncService).syncStudentNo(1001L, "S001");
+        verify(userProfileSyncService).syncStudentProfile(1001L, "S001", "2026");
     }
 
     @Test
@@ -99,6 +108,7 @@ class UserAdminServiceTest {
         request.setRealName("New");
         request.setEnabled(false);
         request.setStudentNo("S002");
+        request.setEnrollmentYear("2027");
         request.setTeachingClassIds(List.of(3302L));
 
         userAdminService.updateUser(1001L, request);
@@ -106,9 +116,44 @@ class UserAdminServiceTest {
         verify(userMapper).updateById(user);
         assertEquals("New", user.getRealName());
         assertEquals(false, user.getEnabled());
-        verify(userProfileSyncService).syncStudentNo(1001L, "S002");
+        verify(userProfileSyncService).syncStudentProfile(1001L, "S002", "2027");
         verify(userProfileSyncService).updateStudentTeachingClasses(1001L, List.of(3302L), List.of("STUDENT"));
     }
+
+    @Test
+    void queryUsersShouldExcludeAdminsAndExposeEnrollmentYear() {
+        User user = new User();
+        user.setId(1001L);
+        user.setUsername("alice");
+        user.setRealName("Alice");
+        user.setEnabled(true);
+        Page<User> page = new Page<>(1, 20);
+        page.setRecords(List.of(user));
+        page.setTotal(1);
+        when(userMapper.selectPage(any(Page.class), any(QueryWrapper.class))).thenReturn(page);
+        when(roleAdminService.buildUserRoleViewMap(List.of(1001L))).thenReturn(Map.of());
+        when(userProfileSyncService.buildUserTeachingClassMap(List.of(1001L))).thenReturn(Map.of());
+        StudentProfile profile = new StudentProfile();
+        profile.setUserId(1001L);
+        profile.setStudentNo("S001");
+        profile.setEnrollmentYear("2026");
+        when(userProfileSyncService.buildStudentProfileMap(List.of(1001L))).thenReturn(Map.of(1001L, profile));
+
+        UserQueryRequest request = new UserQueryRequest();
+        request.setPageNum(1);
+        request.setPageSize(20);
+        request.setKeyword(" Alice ");
+        PageResponse<UserView> result = userAdminService.queryUsers(request);
+
+        assertEquals(1, result.getTotal());
+        assertEquals("S001", result.getRecords().get(0).getStudentNo());
+        assertEquals("2026", result.getRecords().get(0).getEnrollmentYear());
+        ArgumentCaptor<QueryWrapper> wrapperCaptor = ArgumentCaptor.forClass(QueryWrapper.class);
+        verify(userMapper).selectPage(any(Page.class), wrapperCaptor.capture());
+        assertTrue(wrapperCaptor.getValue().getSqlSegment().contains("sys_role"));
+        assertTrue(wrapperCaptor.getValue().getSqlSegment().contains("ADMIN"));
+    }
+
     @Test
     void createUserShouldRequirePasswordWhenDefaultPasswordNotConfigured() {
         ReflectionTestUtils.setField(userAdminService, "defaultPassword", "");

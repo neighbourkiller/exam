@@ -9,7 +9,9 @@ import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.common.security.JwtTokenProvider;
 import com.ekusys.exam.common.security.LoginUser;
 import com.ekusys.exam.common.security.SecurityUtils;
+import com.ekusys.exam.repository.entity.StudentProfile;
 import com.ekusys.exam.repository.entity.User;
+import com.ekusys.exam.repository.mapper.StudentProfileMapper;
 import com.ekusys.exam.repository.mapper.UserMapper;
 import io.jsonwebtoken.JwtException;
 import java.util.UUID;
@@ -32,17 +34,20 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
     private final UserMapper userMapper;
+    private final StudentProfileMapper studentProfileMapper;
     private final RefreshTokenSessionService refreshTokenSessionService;
     private final PasswordEncoder passwordEncoder;
 
     public AuthService(AuthenticationManager authenticationManager,
                        JwtTokenProvider jwtTokenProvider,
                        UserMapper userMapper,
+                       StudentProfileMapper studentProfileMapper,
                        RefreshTokenSessionService refreshTokenSessionService,
                        PasswordEncoder passwordEncoder) {
         this.authenticationManager = authenticationManager;
         this.jwtTokenProvider = jwtTokenProvider;
         this.userMapper = userMapper;
+        this.studentProfileMapper = studentProfileMapper;
         this.refreshTokenSessionService = refreshTokenSessionService;
         this.passwordEncoder = passwordEncoder;
     }
@@ -106,10 +111,15 @@ public class AuthService {
             throw new BusinessException("未登录");
         }
         User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getId, current.getUserId()));
+        StudentProfile profile = studentProfileMapper.selectOne(
+            new LambdaQueryWrapper<StudentProfile>().eq(StudentProfile::getUserId, current.getUserId())
+        );
         return MeResponse.builder()
             .userId(current.getUserId())
             .username(current.getUsername())
             .realName(user == null ? current.getUsername() : user.getRealName())
+            .studentNo(profile == null ? null : profile.getStudentNo())
+            .enrollmentYear(profile == null ? null : profile.getEnrollmentYear())
             .roles(current.getRoles())
             .build();
     }

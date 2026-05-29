@@ -58,8 +58,14 @@
       </el-table-column>
       <el-table-column prop="content" label="题目" />
       <el-table-column prop="defaultScore" label="默认分值" width="100" />
-      <el-table-column label="操作" width="220">
+      <el-table-column label="操作" width="280">
         <template #default="scope">
+          <el-button
+            size="small"
+            @click="openPreviewDialog(scope.row)"
+          >
+            查看
+          </el-button>
           <el-button
             type="primary"
             size="small"
@@ -236,6 +242,94 @@
         <el-button type="success" @click="submitQuestion">{{ dialogSubmitText }}</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="previewDialogVisible"
+      title="题目预览"
+      width="900px"
+      destroy-on-close
+      @closed="resetPreviewDialog"
+    >
+      <div v-loading="previewLoading" class="question-preview-body">
+        <div v-if="previewQuestion.id" class="question-preview">
+          <div class="question-preview-header">
+            <div class="question-preview-tags">
+              <el-tag>{{ questionTypeLabel(previewQuestion.type) }}</el-tag>
+              <el-tag type="info">{{ difficultyLabel(previewQuestion.difficulty) }}</el-tag>
+              <span class="question-preview-score">{{ displayValue(previewQuestion.defaultScore) }} 分</span>
+            </div>
+            <div class="question-preview-meta">
+              <span>题目ID：{{ displayValue(previewQuestion.id) }}</span>
+              <span>课程：{{ displayValue(previewQuestion.subjectName || previewQuestion.subjectId) }}</span>
+              <span>创建者ID：{{ displayValue(previewQuestion.creatorId) }}</span>
+            </div>
+          </div>
+
+          <section class="preview-section">
+            <div class="preview-section-title">题干</div>
+            <div class="preview-text">{{ displayValue(previewQuestion.content) }}</div>
+          </section>
+
+          <section v-if="previewOptions.length" class="preview-section">
+            <div class="preview-section-title">选项</div>
+            <div class="preview-option-list">
+              <div
+                v-for="option in previewOptions"
+                :key="option.label"
+                class="preview-option-item"
+              >
+                <span class="preview-option-label">{{ option.label }}</span>
+                <span class="preview-option-value">{{ option.value }}</span>
+              </div>
+            </div>
+          </section>
+
+          <section v-if="previewImageAssets.length" class="preview-section">
+            <div class="preview-section-title">附件插图</div>
+            <div class="preview-image-list">
+              <el-image
+                v-for="asset in previewImageAssets"
+                :key="asset.assetId"
+                :src="asset.url"
+                :preview-src-list="previewImageUrls"
+                fit="contain"
+                class="preview-image-item"
+              />
+            </div>
+          </section>
+
+          <section v-if="previewOtherAssets.length" class="preview-section">
+            <div class="preview-section-title">其他附件</div>
+            <div class="preview-attachment-list">
+              <a
+                v-for="asset in previewOtherAssets"
+                :key="asset.assetId"
+                :href="asset.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="preview-attachment-item"
+              >
+                {{ asset.originalName || asset.url || asset.assetId }}
+              </a>
+            </div>
+          </section>
+
+          <section class="preview-section">
+            <div class="preview-section-title">参考答案</div>
+            <div class="preview-text">{{ displayValue(previewQuestion.answer) }}</div>
+          </section>
+
+          <section class="preview-section">
+            <div class="preview-section-title">解析</div>
+            <div class="preview-text">{{ displayValue(previewQuestion.analysis) }}</div>
+          </section>
+        </div>
+        <el-empty v-else-if="!previewLoading" description="暂无可预览内容" />
+      </div>
+      <template #footer>
+        <el-button @click="previewDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </el-card>
 </template>
 
@@ -256,6 +350,9 @@ const tableData = ref([])
 const subjectOptions = ref([])
 const uploadedAssets = ref([])
 const createDialogVisible = ref(false)
+const previewDialogVisible = ref(false)
+const previewLoading = ref(false)
+const previewLoadSeq = ref(0)
 const dialogMode = ref('create')
 const editingQuestionId = ref(null)
 const formHydrating = ref(false)
@@ -283,6 +380,23 @@ const optionItems = ref([])
 const singleAnswerValue = ref('')
 const multiAnswerValues = ref([])
 
+const createPreviewQuestionDefaults = () => ({
+  id: null,
+  subjectId: null,
+  subjectName: '',
+  type: '',
+  difficulty: '',
+  content: '',
+  optionsJson: '',
+  answer: '',
+  analysis: '',
+  defaultScore: null,
+  creatorId: null,
+  canManage: false,
+  assets: []
+})
+const previewQuestion = reactive(createPreviewQuestionDefaults())
+
 const courseLabel = (course) => `${course.id} - ${course.name}`
 const questionTypeLabelMap = {
   SINGLE: '单选',
@@ -299,6 +413,7 @@ const difficultyLabelMap = {
 }
 const difficultyLabel = (difficulty) => difficultyLabelMap[difficulty] || difficulty || '-'
 const normalizeId = (value) => (value === null || value === undefined ? null : String(value))
+const displayValue = (value) => (value === null || value === undefined || value === '' ? '-' : value)
 const normalizeQuestionRecords = (records) =>
   (records || []).map(item => ({
     ...item,
@@ -382,7 +497,8 @@ const normalizeUploadedAssets = (assets) => {
       objectKey: asset.objectKey,
       originalName: asset.originalName,
       size: asset.size,
-      fileType: asset.fileType
+      fileType: asset.fileType,
+      contentType: asset.contentType
     }))
 }
 
@@ -398,7 +514,7 @@ const parseOptionsFromJson = (optionsJson) => {
     return parsed
       .filter(item => item && item.value !== undefined && item.value !== null)
       .map((item, index) => ({
-        label: optionLabel(index),
+        label: item.label || optionLabel(index),
         value: String(item.value)
       }))
   } catch {
@@ -422,6 +538,69 @@ const syncAnswerControlsFromRaw = () => {
       .split(',')
       .map(item => item.trim())
       .filter(item => item)
+  }
+}
+
+const isImageAsset = (asset) => (asset?.fileType || '').toUpperCase() === 'IMAGE'
+const previewAssets = computed(() => normalizeUploadedAssets(previewQuestion.assets))
+const previewImageAssets = computed(() => previewAssets.value.filter(asset => isImageAsset(asset)))
+const previewOtherAssets = computed(() => previewAssets.value.filter(asset => !isImageAsset(asset)))
+const previewImageUrls = computed(() =>
+  previewImageAssets.value
+    .map(asset => asset.url)
+    .filter(url => !!url)
+)
+const previewOptions = computed(() => parseOptionsFromJson(previewQuestion.optionsJson))
+
+const resetPreviewDialog = () => {
+  previewLoadSeq.value += 1
+  Object.assign(previewQuestion, createPreviewQuestionDefaults())
+  previewLoading.value = false
+}
+
+const normalizeQuestionDetail = (detail = {}) => ({
+  ...createPreviewQuestionDefaults(),
+  ...detail,
+  id: normalizeId(detail.id),
+  subjectId: normalizeId(detail.subjectId),
+  creatorId: normalizeId(detail.creatorId),
+  subjectName: detail.subjectName || '',
+  type: detail.type || '',
+  difficulty: detail.difficulty || '',
+  content: detail.content || '',
+  optionsJson: detail.optionsJson || '',
+  answer: detail.answer || '',
+  analysis: detail.analysis || '',
+  defaultScore: detail.defaultScore ?? null,
+  assets: normalizeUploadedAssets(detail.assets)
+})
+
+const openPreviewDialog = async (row) => {
+  const questionId = normalizeId(row?.id)
+  if (!questionId) {
+    ElMessage.warning('题目ID无效，无法查看')
+    return
+  }
+
+  previewDialogVisible.value = true
+  resetPreviewDialog()
+  previewLoading.value = true
+  const seq = ++previewLoadSeq.value
+  try {
+    const detail = await getQuestionDetailApi(questionId)
+    if (seq !== previewLoadSeq.value) {
+      return
+    }
+    Object.assign(previewQuestion, normalizeQuestionDetail(detail))
+  } catch (error) {
+    if (seq === previewLoadSeq.value) {
+      previewDialogVisible.value = false
+    }
+    throw error
+  } finally {
+    if (seq === previewLoadSeq.value) {
+      previewLoading.value = false
+    }
   }
 }
 
@@ -726,6 +905,142 @@ onMounted(async () => {
   width: 26px;
   color: #606266;
   font-weight: 600;
+}
+
+.question-preview-body {
+  min-height: 220px;
+}
+
+.question-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.question-preview-header {
+  padding: 14px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background-color: #f8fafc;
+}
+
+.question-preview-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.question-preview-score {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.question-preview-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 16px;
+  color: #64748b;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.preview-section {
+  padding-bottom: 14px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.preview-section:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.preview-section-title {
+  margin-bottom: 8px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.preview-text {
+  color: #1f2937;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.preview-option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-option-item {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background-color: #ffffff;
+}
+
+.preview-option-label {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.preview-option-value {
+  color: #334155;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.preview-image-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.preview-image-item {
+  width: 160px;
+  height: 120px;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  background-color: #f8fafc;
+}
+
+.preview-attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preview-attachment-item {
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background-color: #eff6ff;
+  color: #2563eb;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.preview-attachment-item:hover {
+  border-color: #93c5fd;
+  color: #1d4ed8;
 }
 
 .page-card {

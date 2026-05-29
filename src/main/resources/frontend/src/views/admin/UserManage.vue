@@ -63,7 +63,10 @@
         <el-table-column prop="studentNo" label="学号" min-width="130">
           <template #default="{ row }">{{ row.studentNo || '-' }}</template>
         </el-table-column>
-        <el-table-column label="角色" min-width="180">
+        <el-table-column prop="enrollmentYear" label="入学年份" width="110">
+          <template #default="{ row }">{{ row.enrollmentYear || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="角色" min-width="100">
           <template #default="scope">
             <div class="role-tags">
               <el-tag
@@ -146,6 +149,11 @@
             </el-form-item>
           </el-col>
           <el-col v-if="createFormIsStudent" :xs="24" :sm="12">
+            <el-form-item label="入学年份">
+              <el-input v-model="form.enrollmentYear" clearable maxlength="4" placeholder="如 2026" />
+            </el-form-item>
+          </el-col>
+          <el-col v-if="createFormIsStudent" :xs="24">
             <el-form-item label="教学班">
               <el-select v-model="form.teachingClassIds" multiple filterable clearable collapse-tags placeholder="可选多个教学班">
                 <el-option
@@ -179,6 +187,9 @@
         <template v-if="editForm.isStudent">
           <el-form-item label="学号">
             <el-input v-model="editForm.studentNo" clearable />
+          </el-form-item>
+          <el-form-item label="入学年份">
+            <el-input v-model="editForm.enrollmentYear" clearable maxlength="4" placeholder="如 2026" />
           </el-form-item>
           <el-form-item label="教学班">
             <el-select v-model="editForm.teachingClassIds" multiple filterable clearable placeholder="可选多个教学班">
@@ -230,6 +241,7 @@ const editForm = reactive({
   realName: '',
   enabled: true,
   studentNo: '',
+  enrollmentYear: '',
   teachingClassIds: [],
   isStudent: false
 })
@@ -240,6 +252,7 @@ const form = reactive({
   password: '',
   roleIds: [],
   studentNo: '',
+  enrollmentYear: '',
   teachingClassIds: []
 })
 
@@ -264,6 +277,7 @@ const createFormIsStudent = computed(() => {
 watch(createFormIsStudent, (isStudent) => {
   if (!isStudent) {
     form.studentNo = ''
+    form.enrollmentYear = ''
     form.teachingClassIds = []
   }
 })
@@ -323,6 +337,7 @@ const resetCreateForm = () => {
   form.password = ''
   form.roleIds = []
   form.studentNo = ''
+  form.enrollmentYear = ''
   form.teachingClassIds = []
 }
 
@@ -339,6 +354,7 @@ const create = async () => {
   }
   const isStudent = createFormIsStudent.value
   const studentNo = isStudent ? ((form.studentNo || '').trim() || null) : null
+  const enrollmentYear = isStudent ? ((form.enrollmentYear || '').trim() || null) : null
   const username = ((form.username || '').trim()) || (isStudent ? (studentNo || '') : '')
   if (!username) {
     ElMessage.warning('请输入用户名')
@@ -350,6 +366,7 @@ const create = async () => {
     password: form.password,
     roleIds: form.roleIds,
     studentNo,
+    enrollmentYear,
     teachingClassIds: isStudent ? form.teachingClassIds : []
   }
   await createUserApi(payload)
@@ -367,6 +384,7 @@ const openEdit = (row) => {
   editForm.realName = row.realName || ''
   editForm.enabled = row.enabled !== false
   editForm.studentNo = row.studentNo || ''
+  editForm.enrollmentYear = row.enrollmentYear || ''
   editForm.teachingClassIds = isStudent ? (row.teachingClasses || []).map((c) => c.id) : []
   editForm.isStudent = isStudent
   editDialogVisible.value = true
@@ -382,6 +400,7 @@ const saveEdit = async () => {
     realName,
     enabled: !!editForm.enabled,
     studentNo: editForm.isStudent ? ((editForm.studentNo || '').trim() || null) : null,
+    enrollmentYear: editForm.isStudent ? ((editForm.enrollmentYear || '').trim() || null) : null,
     teachingClassIds: editForm.isStudent ? editForm.teachingClassIds : null
   }
   await updateUserApi(editForm.id, payload)

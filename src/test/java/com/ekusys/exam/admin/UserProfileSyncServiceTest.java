@@ -1,6 +1,7 @@
 package com.ekusys.exam.admin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
@@ -93,6 +94,36 @@ class UserProfileSyncServiceTest {
         userProfileSyncService.syncStudentNo(1001L, "S002");
 
         assertEquals("S002", profile.getStudentNo());
+        verify(studentProfileMapper).updateById(profile);
+    }
+
+    @Test
+    void syncStudentProfileShouldUpdateStudentNoAndEnrollmentYear() {
+        StudentProfile profile = new StudentProfile();
+        profile.setId(1L);
+        profile.setUserId(1001L);
+        when(studentProfileMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(profile);
+
+        userProfileSyncService.syncStudentProfile(1001L, " S003 ", " 2026 ");
+
+        assertEquals("S003", profile.getStudentNo());
+        assertEquals("2026", profile.getEnrollmentYear());
+        verify(studentProfileMapper).updateById(profile);
+    }
+
+    @Test
+    void syncStudentProfileShouldNormalizeBlankValues() {
+        StudentProfile profile = new StudentProfile();
+        profile.setId(1L);
+        profile.setUserId(1001L);
+        profile.setStudentNo("S001");
+        profile.setEnrollmentYear("2026");
+        when(studentProfileMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(profile);
+
+        userProfileSyncService.syncStudentProfile(1001L, " ", "");
+
+        assertNull(profile.getStudentNo());
+        assertNull(profile.getEnrollmentYear());
         verify(studentProfileMapper).updateById(profile);
     }
 }

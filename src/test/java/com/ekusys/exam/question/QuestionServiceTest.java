@@ -17,9 +17,11 @@ import com.ekusys.exam.common.enums.QuestionType;
 import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.question.dto.QuestionUpdateRequest;
+import com.ekusys.exam.question.dto.QuestionView;
 import com.ekusys.exam.question.service.QuestionAssetUrlResolver;
 import com.ekusys.exam.question.service.QuestionService;
 import com.ekusys.exam.repository.entity.Question;
+import com.ekusys.exam.repository.entity.QuestionAsset;
 import com.ekusys.exam.repository.mapper.PaperQuestionMapper;
 import com.ekusys.exam.repository.mapper.QuestionAssetMapper;
 import com.ekusys.exam.repository.mapper.QuestionMapper;
@@ -58,6 +60,42 @@ class QuestionServiceTest {
             paperQuestionMapper,
             new QuestionAssetUrlResolver(new com.ekusys.exam.common.config.MinioProperties())
         );
+    }
+
+    @Test
+    void getByIdShouldReturnCreatorIdAndAssets() {
+        Question question = new Question();
+        question.setId(1L);
+        question.setCreatorId(1001L);
+        question.setContent("question-content");
+        question.setAnswer("A");
+        when(questionMapper.selectById(1L)).thenReturn(question);
+
+        QuestionAsset asset = new QuestionAsset();
+        asset.setId(9001L);
+        asset.setQuestionId(1L);
+        asset.setUrl("http://example.com/question.png");
+        asset.setFileType("IMAGE");
+        asset.setOriginalName("question.png");
+        when(questionAssetMapper.selectList(any(LambdaQueryWrapper.class)))
+            .thenReturn(List.of(asset));
+
+        QuestionView detail;
+        try (MockedStatic<SecurityUtils> mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentRoles).thenReturn(List.of("TEACHER"));
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(2002L);
+
+            detail = questionService.getById(1L);
+        }
+
+        assertEquals("1", detail.getId());
+        assertEquals(1001L, detail.getCreatorId());
+        assertEquals("question-content", detail.getContent());
+        assertEquals("A", detail.getAnswer());
+        assertEquals(false, detail.getCanManage());
+        assertEquals(1, detail.getAssets().size());
+        assertEquals("9001", detail.getAssets().get(0).getAssetId());
+        assertEquals("http://example.com/question.png", detail.getAssets().get(0).getUrl());
     }
 
     @Test

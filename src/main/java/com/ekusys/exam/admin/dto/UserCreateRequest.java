@@ -16,6 +16,7 @@ public class UserCreateRequest {
 
     private String password;
     private String studentNo;
+    private String enrollmentYear;
 
     @NotEmpty
     private List<Long> roleIds;

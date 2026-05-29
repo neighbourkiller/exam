@@ -18,6 +18,7 @@ public class QuestionView {
     private String answer;
     private String analysis;
     private Integer defaultScore;
+    private Long creatorId;
     private Boolean canManage;
     private List<QuestionImageUploadView> assets;
 }

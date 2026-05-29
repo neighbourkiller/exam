@@ -162,6 +162,7 @@ public class QuestionService {
             .answer(q.getAnswer())
             .analysis(q.getAnalysis())
             .defaultScore(q.getDefaultScore())
+            .creatorId(q.getCreatorId())
             .canManage(canManage(q))
             .assets(assets)
             .build();

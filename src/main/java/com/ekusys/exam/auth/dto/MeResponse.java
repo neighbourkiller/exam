@@ -11,5 +11,7 @@ public class MeResponse {
     private Long userId;
     private String username;
     private String realName;
+    private String studentNo;
+    private String enrollmentYear;
     private List<String> roles;
 }

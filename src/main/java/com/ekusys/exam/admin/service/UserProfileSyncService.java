@@ -78,7 +78,7 @@ public class UserProfileSyncService {
         return result;
     }
 
-    public Map<Long, String> buildStudentNoMap(List<Long> userIds) {
+    public Map<Long, StudentProfile> buildStudentProfileMap(List<Long> userIds) {
         if (userIds == null || userIds.isEmpty()) {
             return Map.of();
         }
@@ -86,7 +86,7 @@ public class UserProfileSyncService {
             new LambdaQueryWrapper<StudentProfile>().in(StudentProfile::getUserId, userIds)
         ).stream().collect(Collectors.toMap(
             StudentProfile::getUserId,
-            StudentProfile::getStudentNo,
+            item -> item,
             (a, b) -> a
         ));
     }
@@ -121,6 +121,25 @@ public class UserProfileSyncService {
         } else {
             teacherProfileMapper.delete(new LambdaQueryWrapper<TeacherProfile>().eq(TeacherProfile::getUserId, userId));
         }
+    }
+
+    @Transactional
+    public void syncStudentProfile(Long userId, String studentNo, String enrollmentYear) {
+        StudentProfile profile = studentProfileMapper.selectOne(
+            new LambdaQueryWrapper<StudentProfile>().eq(StudentProfile::getUserId, userId).last("limit 1")
+        );
+        if (profile == null) {
+            profile = new StudentProfile();
+            profile.setUserId(userId);
+            profile.setStatus("ACTIVE");
+            profile.setStudentNo(normalizeText(studentNo));
+            profile.setEnrollmentYear(normalizeText(enrollmentYear));
+            studentProfileMapper.insert(profile);
+            return;
+        }
+        profile.setStudentNo(normalizeText(studentNo));
+        profile.setEnrollmentYear(normalizeText(enrollmentYear));
+        studentProfileMapper.updateById(profile);
     }
 
     @Transactional

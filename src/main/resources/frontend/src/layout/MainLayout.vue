@@ -51,6 +51,10 @@
                   <strong>{{ auth.username || '未登录' }}</strong>
                   <span>学生账号</span>
                 </div>
+                <button type="button" class="student-account-menu__item" role="menuitem" @click="openProfileDialog">
+                  <el-icon class="student-account-menu__icon"><Postcard /></el-icon>
+                  <span>个人资料</span>
+                </button>
                 <button type="button" class="student-account-menu__item" role="menuitem" @click="openPasswordDialog">
                   <el-icon class="student-account-menu__icon"><Lock /></el-icon>
                   <span>修改密码</span>
@@ -193,15 +197,53 @@
         <el-button type="primary" :loading="changingPassword" @click="handleChangePassword">确认修改</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="showProfileDialog"
+      title="个人资料"
+      width="min(460px, calc(100vw - 32px))"
+      class="student-profile-dialog"
+    >
+      <div v-loading="profileLoading" class="student-profile-card">
+        <div class="student-profile-card__header">
+          <div class="student-profile-card__avatar">{{ userInitial }}</div>
+          <div>
+            <strong>{{ displayProfileValue(profile.realName) }}</strong>
+            <span>{{ displayProfileValue(profile.username) }}</span>
+          </div>
+        </div>
+        <dl class="student-profile-details">
+          <div class="student-profile-details__item">
+            <dt>真名</dt>
+            <dd>{{ displayProfileValue(profile.realName) }}</dd>
+          </div>
+          <div class="student-profile-details__item">
+            <dt>用户名</dt>
+            <dd>{{ displayProfileValue(profile.username) }}</dd>
+          </div>
+          <div class="student-profile-details__item">
+            <dt>学号</dt>
+            <dd>{{ displayProfileValue(profile.studentNo) }}</dd>
+          </div>
+          <div class="student-profile-details__item">
+            <dt>入学年份</dt>
+            <dd>{{ displayProfileValue(profile.enrollmentYear) }}</dd>
+          </div>
+        </dl>
+      </div>
+      <template #footer>
+        <el-button @click="showProfileDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowDownBold, ArrowUpBold, Lock, SwitchButton } from '@element-plus/icons-vue'
+import { ArrowDownBold, ArrowUpBold, Lock, Postcard, SwitchButton } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
-import { changePasswordApi, logoutApi } from '../api'
+import { changePasswordApi, logoutApi, meApi } from '../api'
 import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
@@ -218,10 +260,18 @@ const studentAccountRef = ref(null)
 const studentMenuOpen = ref(false)
 const showPasswordDialog = ref(false)
 const changingPassword = ref(false)
+const showProfileDialog = ref(false)
+const profileLoading = ref(false)
 const passwordForm = reactive({
   oldPassword: '',
   newPassword: '',
   confirmPassword: ''
+})
+const profile = reactive({
+  realName: '',
+  username: '',
+  studentNo: '',
+  enrollmentYear: ''
 })
 const studentNavItems = [
   { index: '/student/exams', label: '我的考试', icon: 'clipboard' },
@@ -258,6 +308,34 @@ const resetPasswordForm = () => {
   passwordForm.oldPassword = ''
   passwordForm.newPassword = ''
   passwordForm.confirmPassword = ''
+}
+
+const resetProfile = () => {
+  profile.realName = ''
+  profile.username = ''
+  profile.studentNo = ''
+  profile.enrollmentYear = ''
+}
+
+const displayProfileValue = (value) => value || '--'
+
+const openProfileDialog = async () => {
+  closeStudentMenu()
+  resetProfile()
+  showProfileDialog.value = true
+  profileLoading.value = true
+  try {
+    const data = await meApi()
+    auth.setProfile(data || {})
+    profile.realName = data?.realName || ''
+    profile.username = data?.username || auth.username || ''
+    profile.studentNo = data?.studentNo || ''
+    profile.enrollmentYear = data?.enrollmentYear || ''
+  } catch {
+    resetProfile()
+  } finally {
+    profileLoading.value = false
+  }
 }
 
 const openPasswordDialog = () => {
@@ -629,6 +707,86 @@ onBeforeUnmount(() => {
   transform: translateY(8px) scale(0.98);
 }
 
+.student-profile-card {
+  min-height: 226px;
+  display: grid;
+  gap: 18px;
+}
+
+.student-profile-card__header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 2px 2px;
+}
+
+.student-profile-card__avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 48px;
+  background: var(--student-text, #2f2d2a);
+  color: var(--student-bg, #f8f5ef);
+  font-weight: 700;
+}
+
+.student-profile-card__header strong,
+.student-profile-card__header span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.student-profile-card__header strong {
+  color: var(--student-text, #2f2d2a);
+  font-size: 18px;
+}
+
+.student-profile-card__header span {
+  margin-top: 3px;
+  color: var(--student-muted, #746f68);
+  font-size: 13px;
+}
+
+.student-profile-details {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.student-profile-details__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--student-line, #e5ddd0);
+  border-radius: 10px;
+  background: #fcfaf6;
+}
+
+.student-profile-details dt {
+  flex: 0 0 auto;
+  color: var(--student-muted, #746f68);
+  font-size: 13px;
+}
+
+.student-profile-details dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--student-text, #2f2d2a);
+  font-size: 14px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .student-main {
   min-width: 0;
   display: flex;
@@ -834,6 +992,13 @@ onBeforeUnmount(() => {
   .student-account-trigger {
     min-height: 58px;
     padding: 8px 10px;
+  }
+
+  .student-profile-details__item {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
   }
 
   .student-content-wrapper {

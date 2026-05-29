@@ -113,6 +113,8 @@ class AuthControllerTest {
             .userId(1001L)
             .username("alice")
             .realName("Alice")
+            .studentNo("S2026001")
+            .enrollmentYear("2026")
             .roles(List.of("STUDENT"))
             .build());
 
@@ -120,7 +122,10 @@ class AuthControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.success").value(true))
             .andExpect(jsonPath("$.data.userId").value(1001))
-            .andExpect(jsonPath("$.data.username").value("alice"));
+            .andExpect(jsonPath("$.data.username").value("alice"))
+            .andExpect(jsonPath("$.data.realName").value("Alice"))
+            .andExpect(jsonPath("$.data.studentNo").value("S2026001"))
+            .andExpect(jsonPath("$.data.enrollmentYear").value("2026"));
     }
 
     @Test

@@ -9,6 +9,7 @@ import com.ekusys.exam.admin.dto.UserUpdateRequest;
 import com.ekusys.exam.admin.dto.UserView;
 import com.ekusys.exam.common.api.PageResponse;
 import com.ekusys.exam.common.exception.BusinessException;
+import com.ekusys.exam.repository.entity.StudentProfile;
 import com.ekusys.exam.repository.entity.User;
 import com.ekusys.exam.repository.mapper.UserMapper;
 import jakarta.annotation.PostConstruct;
@@ -25,7 +26,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserAdminService {
 
     private static final Logger log = LoggerFactory.getLogger(UserAdminService.class);
+    private static final String ROLE_ADMIN = "ADMIN";
     private static final String ROLE_STUDENT = "STUDENT";
+    private static final String ADMIN_USER_ID_SQL =
+        "select ur.user_id from sys_user_role ur join sys_role r on ur.role_id = r.id where r.code = '" + ROLE_ADMIN + "'";
 
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
@@ -56,11 +60,13 @@ public class UserAdminService {
 
     public PageResponse<UserView> queryUsers(UserQueryRequest request) {
         QueryWrapper<User> wrapper = new QueryWrapper<>();
-        if (request.getKeyword() != null && !request.getKeyword().isBlank()) {
-            wrapper.lambda()
-                .like(User::getUsername, request.getKeyword())
+        wrapper.notInSql("id", ADMIN_USER_ID_SQL);
+        String keyword = normalizeText(request.getKeyword());
+        if (keyword != null) {
+            wrapper.and(q -> q
+                .like("username", keyword)
                 .or()
-                .like(User::getRealName, request.getKeyword());
+                .like("real_name", keyword));
         }
         Page<User> page = userMapper.selectPage(new Page<>(request.getPageNum(), request.getPageSize()), wrapper);
         if (page.getRecords().isEmpty()) {
@@ -75,17 +81,21 @@ public class UserAdminService {
         List<Long> userIds = page.getRecords().stream().map(User::getId).toList();
         Map<Long, List<com.ekusys.exam.admin.dto.RoleView>> userRoleViewMap = roleAdminService.buildUserRoleViewMap(userIds);
         Map<Long, List<com.ekusys.exam.admin.dto.TeachingClassView>> userTeachingClassMap = userProfileSyncService.buildUserTeachingClassMap(userIds);
-        Map<Long, String> studentNoMap = userProfileSyncService.buildStudentNoMap(userIds);
+        Map<Long, StudentProfile> studentProfileMap = userProfileSyncService.buildStudentProfileMap(userIds);
 
-        List<UserView> users = page.getRecords().stream().map(user -> UserView.builder()
-            .id(user.getId())
-            .username(user.getUsername())
-            .realName(user.getRealName())
-            .enabled(user.getEnabled())
-            .studentNo(studentNoMap.get(user.getId()))
-            .teachingClasses(userTeachingClassMap.getOrDefault(user.getId(), List.of()))
-            .roles(userRoleViewMap.getOrDefault(user.getId(), List.of()))
-            .build()).toList();
+        List<UserView> users = page.getRecords().stream().map(user -> {
+            StudentProfile studentProfile = studentProfileMap.get(user.getId());
+            return UserView.builder()
+                .id(user.getId())
+                .username(user.getUsername())
+                .realName(user.getRealName())
+                .enabled(user.getEnabled())
+                .studentNo(studentProfile == null ? null : studentProfile.getStudentNo())
+                .enrollmentYear(studentProfile == null ? null : studentProfile.getEnrollmentYear())
+                .teachingClasses(userTeachingClassMap.getOrDefault(user.getId(), List.of()))
+                .roles(userRoleViewMap.getOrDefault(user.getId(), List.of()))
+                .build();
+        }).toList();
 
         return PageResponse.<UserView>builder()
             .pageNum(page.getCurrent())
@@ -110,7 +120,7 @@ public class UserAdminService {
         roleAdminService.assignRoles(user.getId(), request.getRoleIds(), request.getTeachingClassIds());
         List<String> roleCodes = roleAdminService.listRoleCodesByUserId(user.getId());
         if (roleCodes.contains(ROLE_STUDENT)) {
-            userProfileSyncService.syncStudentNo(user.getId(), request.getStudentNo());
+            userProfileSyncService.syncStudentProfile(user.getId(), request.getStudentNo(), request.getEnrollmentYear());
         }
         return user.getId();
     }
@@ -126,7 +136,7 @@ public class UserAdminService {
 
         List<String> roleCodes = roleAdminService.listRoleCodesByUserId(userId);
         if (roleCodes.contains(ROLE_STUDENT)) {
-            userProfileSyncService.syncStudentNo(userId, request.getStudentNo());
+            userProfileSyncService.syncStudentProfile(userId, request.getStudentNo(), request.getEnrollmentYear());
         }
         if (request.getTeachingClassIds() != null) {
             userProfileSyncService.updateStudentTeachingClasses(userId, request.getTeachingClassIds(), roleCodes);
@@ -180,5 +190,13 @@ public class UserAdminService {
             return defaultPassword;
         }
         throw new BusinessException("请填写密码或配置 APP_DEFAULT_PASSWORD");
+    }
+
+    private String normalizeText(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

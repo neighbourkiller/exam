@@ -12,6 +12,7 @@ public class UserUpdateRequest {
 
     private Boolean enabled;
     private String studentNo;
+    private String enrollmentYear;
 
     private List<Long> teachingClassIds;
 }
