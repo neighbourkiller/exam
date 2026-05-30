@@ -62,7 +62,7 @@ const errors = computed(() => result.value?.errors || [])
 const canConfirm = computed(() => result.value && (result.value.failureCount || 0) === 0)
 
 const templates = {
-  STUDENT: 'username,realName,password,studentNo,teachingClassIds\ns001,张三,123456,S001,"1001,1002"\n',
+  STUDENT: 'username,realName,password,studentNo,enrollmentYear,teachingClassIds\ns001,张三,123456,S001,2026,"1001,1002"\n',
   TEACHER: 'username,realName,password,teacherNo,title\nteacher01,李老师,123456,T001,讲师\n',
   COURSE: 'id,name,description\n1,Java程序设计,Java基础课程\n',
   CLASS: 'id,name,subjectId,teacherId,teacherUsername,term,status,capacity\n1001,高一数学1班,1,2,,2026春,ONGOING,60\n',

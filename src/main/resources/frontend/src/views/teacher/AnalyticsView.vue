@@ -149,6 +149,108 @@ const selectedExam = computed(() => examOptions.value.find(e => String(e.examId)
 
 const formatNum = (v) => v != null ? (Number.isInteger(v) ? v : v.toFixed(1)) : '0'
 
+const exportLabels = {
+  csv: 'CSV 原始数据',
+  dist: '成绩分布报告',
+  trend: '班级趋势报告',
+  wrong: '错题统计报告'
+}
+
+const escapeCsvValue = (value) => {
+  if (value == null) return ''
+  const text = String(value).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+const toCsvContent = (rows) => rows.map(row => row.map(escapeCsvValue).join(',')).join('\r\n')
+
+const safeFilePart = (value) => String(value || '未命名考试')
+  .replace(/[\\/:*?"<>|]/g, '_')
+  .replace(/\s+/g, '_')
+  .slice(0, 60)
+
+const buildFileName = (command) => {
+  const exam = selectedExam.value
+  const examId = exam?.examId ?? selectedExamId.value
+  const examName = safeFilePart(exam?.name)
+  const label = safeFilePart(exportLabels[command])
+  return `考试数据_${examId}_${examName}_${label}.csv`
+}
+
+const buildExamInfoRows = () => {
+  const exam = selectedExam.value
+  return [
+    ['考试信息'],
+    ['考试ID', exam?.examId ?? selectedExamId.value],
+    ['考试名称', exam?.name ?? ''],
+    ['导出时间', new Date().toLocaleString()]
+  ]
+}
+
+const buildOverviewRows = () => [
+  ['概览指标'],
+  ['指标', '数值', '单位'],
+  ['参考总人数', overview.value.totalStudents ?? 0, '人'],
+  ['全级平均分', formatNum(overview.value.avgScore), '分'],
+  ['整体及格率', formatNum(overview.value.passRate), '%'],
+  ['达标及格数', overview.value.passCount ?? 0, '人'],
+  ['最高得分', overview.value.maxScore ?? '', '分'],
+  ['最低得分', overview.value.minScore ?? '', '分']
+]
+
+const buildDistributionRows = () => [
+  ['成绩段分布'],
+  ['成绩区间', '人数'],
+  ...distData.value.map(item => [item.range, item.count ?? 0])
+]
+
+const buildTrendRows = () => [
+  ['班级均分趋势'],
+  ['班级ID', '班级名称', '平均分'],
+  ...trendData.value.map(item => [item.classId ?? '', item.className ?? '', formatNum(item.avgScore)])
+]
+
+const buildWrongTopicRows = () => [
+  ['高频错题榜单'],
+  ['题目ID', '题目内容', '错题率(%)', '错误人次', '总作答数'],
+  ...wrongData.value.map(item => [
+    item.questionId ?? '',
+    item.questionContent ?? '',
+    formatNum(item.wrongRate),
+    item.wrongCount ?? 0,
+    item.totalCount ?? 0
+  ])
+]
+
+const buildExportRows = (command) => {
+  if (command === 'dist') return buildDistributionRows()
+  if (command === 'trend') return buildTrendRows()
+  if (command === 'wrong') return buildWrongTopicRows()
+  return [
+    ...buildExamInfoRows(),
+    [],
+    ...buildOverviewRows(),
+    [],
+    ...buildDistributionRows(),
+    [],
+    ...buildTrendRows(),
+    [],
+    ...buildWrongTopicRows()
+  ]
+}
+
+const downloadCsv = (filename, rows) => {
+  const blob = new Blob([`\ufeff${toCsvContent(rows)}`], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 // 现代化的通用 ECharts 提示框配置
 const modernTooltip = {
   backgroundColor: 'rgba(255, 255, 255, 0.95)',
@@ -317,7 +419,26 @@ const loadAll = async () => {
 }
 
 const handleExport = (command) => {
-  ElMessage.info(`正在导出: ${command} (功能开发中)`)
+  const label = exportLabels[command]
+  if (!label) {
+    ElMessage.error('不支持的导出类型')
+    return
+  }
+  if (!selectedExamId.value) {
+    ElMessage.warning('请选择考试后再导出')
+    return
+  }
+  if (loading.value) {
+    ElMessage.warning('数据加载中，请稍后再导出')
+    return
+  }
+
+  try {
+    downloadCsv(buildFileName(command), buildExportRows(command))
+    ElMessage.success(`${label}导出成功`)
+  } catch (e) {
+    ElMessage.error('导出失败，请稍后重试')
+  }
 }
 
 const resizeCharts = () => {

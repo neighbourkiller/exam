@@ -348,6 +348,7 @@ public class AdminBulkService {
         request.setRoleIds(List.of(roleId));
         if ("STUDENT".equals(roleCode)) {
             request.setStudentNo(emptyToNull(value(row, "studentNo")));
+            request.setEnrollmentYear(emptyToNull(value(row, "enrollmentYear")));
             request.setTeachingClassIds(parseLongList(value(row, "teachingClassIds")));
         }
         return request;

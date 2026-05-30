@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.ekusys.exam.admin.dto.BulkImportResultView;
 import com.ekusys.exam.admin.dto.BulkUserOperationRequest;
+import com.ekusys.exam.admin.dto.UserCreateRequest;
 import com.ekusys.exam.admin.service.AdminBulkService;
 import com.ekusys.exam.admin.service.AdminCsvImportService;
 import com.ekusys.exam.admin.service.RoleAdminService;
@@ -32,6 +33,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
@@ -99,6 +101,29 @@ class AdminBulkServiceTest {
         assertEquals("请填写密码或配置 APP_DEFAULT_PASSWORD", result.getErrors().getFirst().getMessage());
         verify(userAdminService).validateCreateUser(any());
         verify(userAdminService, never()).createUser(any());
+    }
+
+    @Test
+    void studentImportShouldPassEnrollmentYearToCreateRequest() {
+        Role role = new Role();
+        role.setId(3L);
+        role.setCode("STUDENT");
+        when(roleMapper.selectOne(any())).thenReturn(role);
+        MockMultipartFile file = csvFile(
+            "students.csv",
+            "username,realName,password,studentNo,enrollmentYear,teachingClassIds\n"
+                + "s001,张三,123456,S001,2026,\"3301,3302\"\n"
+        );
+
+        BulkImportResultView result = adminBulkService.importUsers(file, "STUDENT", true);
+
+        assertEquals(1, result.getSuccessCount());
+        ArgumentCaptor<UserCreateRequest> requestCaptor = ArgumentCaptor.forClass(UserCreateRequest.class);
+        verify(userAdminService).validateCreateUser(requestCaptor.capture());
+        UserCreateRequest request = requestCaptor.getValue();
+        assertEquals("S001", request.getStudentNo());
+        assertEquals("2026", request.getEnrollmentYear());
+        assertEquals(List.of(3301L, 3302L), request.getTeachingClassIds());
     }
 
     @Test
