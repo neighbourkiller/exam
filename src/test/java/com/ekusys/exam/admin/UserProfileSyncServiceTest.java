@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -98,6 +99,51 @@ class UserProfileSyncServiceTest {
     }
 
     @Test
+    void syncStudentProfileShouldRejectDuplicateStudentNoOnCreate() {
+        StudentProfile existing = new StudentProfile();
+        existing.setId(1L);
+        existing.setUserId(2002L);
+        existing.setStudentNo("S001");
+        when(studentProfileMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(existing));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+            () -> userProfileSyncService.syncStudentProfile(1001L, "S001", "2026"));
+
+        assertEquals("学号已存在", ex.getMessage());
+        verify(studentProfileMapper, never()).insert(any(StudentProfile.class));
+    }
+
+    @Test
+    void syncStudentProfileShouldRejectDuplicateStudentNoOnUpdate() {
+        StudentProfile existing = new StudentProfile();
+        existing.setId(1L);
+        existing.setUserId(2002L);
+        existing.setStudentNo("S001");
+        when(studentProfileMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(existing));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+            () -> userProfileSyncService.syncStudentProfile(1001L, "S001", "2026"));
+
+        assertEquals("学号已存在", ex.getMessage());
+        verify(studentProfileMapper, never()).updateById(any(StudentProfile.class));
+    }
+
+    @Test
+    void syncStudentProfileShouldAllowCurrentUserStudentNo() {
+        StudentProfile profile = new StudentProfile();
+        profile.setId(1L);
+        profile.setUserId(1001L);
+        profile.setStudentNo("S001");
+        when(studentProfileMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(profile));
+        when(studentProfileMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(profile);
+
+        userProfileSyncService.syncStudentProfile(1001L, "S001", "2026");
+
+        assertEquals("S001", profile.getStudentNo());
+        verify(studentProfileMapper).updateById(profile);
+    }
+
+    @Test
     void syncStudentProfileShouldUpdateStudentNoAndEnrollmentYear() {
         StudentProfile profile = new StudentProfile();
         profile.setId(1L);
@@ -124,6 +170,7 @@ class UserProfileSyncServiceTest {
 
         assertNull(profile.getStudentNo());
         assertNull(profile.getEnrollmentYear());
+        verify(studentProfileMapper, never()).selectList(any(LambdaQueryWrapper.class));
         verify(studentProfileMapper).updateById(profile);
     }
 }

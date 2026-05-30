@@ -4,7 +4,7 @@
       <div class="page-header">
         <div>
           <div class="header">用户管理</div>
-          <div class="header-subtitle">维护账号信息、启用状态和角色授权</div>
+          <div class="header-subtitle">维护账号信息、启用状态和学生/教师档案</div>
         </div>
         <div class="header-actions">
           <el-button @click="load">刷新</el-button>
@@ -41,17 +41,13 @@
           <el-button size="small" :disabled="!selectedRows.length" @click="batchUser('ENABLE')">批量启用</el-button>
           <el-button size="small" :disabled="!selectedRows.length" @click="batchUser('DISABLE')">批量禁用</el-button>
           <el-select
-            v-model="batchRoleIds"
-            multiple
-            collapse-tags
-            collapse-tags-tooltip
-            clearable
-            placeholder="分配角色"
-            class="batch-select"
+            v-model="query.roleCode"
+            placeholder="列表类型"
+            class="role-filter-select"
+            @change="handleRoleCodeChange"
           >
-            <el-option v-for="role in roleOptions" :key="role.id" :label="`${role.name}(${role.code})`" :value="role.id" />
+            <el-option v-for="item in roleListOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
-          <el-button size="small" :disabled="!selectedRows.length || !batchRoleIds.length" @click="batchAssignRoles">应用角色</el-button>
         </div>
       </div>
 
@@ -60,10 +56,10 @@
         <el-table-column prop="id" label="ID" width="110" />
         <el-table-column prop="username" label="用户名" min-width="140" />
         <el-table-column prop="realName" label="姓名" min-width="120" />
-        <el-table-column prop="studentNo" label="学号" min-width="130">
+        <el-table-column v-if="isStudentList" prop="studentNo" label="学号" min-width="130">
           <template #default="{ row }">{{ row.studentNo || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="enrollmentYear" label="入学年份" width="110">
+        <el-table-column v-if="isStudentList" prop="enrollmentYear" label="入学年份" width="110">
           <template #default="{ row }">{{ row.enrollmentYear || '-' }}</template>
         </el-table-column>
         <el-table-column label="角色" min-width="100">
@@ -82,7 +78,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="教学班" min-width="220">
+        <el-table-column v-if="isStudentList" label="教学班" min-width="220">
           <template #default="scope">
             <div class="class-list">
               <span v-if="!(scope.row.teachingClasses || []).length" class="muted-text">-</span>
@@ -131,15 +127,21 @@
             <el-form-item label="姓名"><el-input v-model="form.realName" /></el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12">
-            <el-form-item label="用户名"><el-input v-model="form.username" placeholder="学生可用学号自动填充" /></el-form-item>
+            <el-form-item label="用户名">
+              <el-input
+                v-model="form.username"
+                :disabled="createFormIsStudent"
+                :placeholder="createFormIsStudent ? '学生用户名自动使用学号' : '请输入用户名'"
+              />
+            </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12">
             <el-form-item label="密码"><el-input v-model="form.password" show-password /></el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12">
             <el-form-item label="角色">
-              <el-select v-model="form.roleIds" multiple collapse-tags collapse-tags-tooltip>
-                <el-option v-for="role in roleOptions" :key="role.id" :label="`${role.name}(${role.code})`" :value="role.id" />
+              <el-select v-model="form.roleId" placeholder="请选择角色">
+                <el-option v-for="role in createRoleOptions" :key="role.id" :label="role.name || role.code" :value="role.id" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -225,16 +227,19 @@ import {
   updateUserApi
 } from '../../api'
 
-const query = reactive({ pageNum: 1, pageSize: 20, keyword: '' })
+const query = reactive({ pageNum: 1, pageSize: 20, keyword: '', roleCode: 'STUDENT' })
 const users = ref([])
 const total = ref(0)
 const loading = ref(false)
 const roleOptions = ref([])
 const teachingClassOptions = ref([])
 const selectedRows = ref([])
-const batchRoleIds = ref([])
 const createDialogVisible = ref(false)
 const editDialogVisible = ref(false)
+const roleListOptions = [
+  { label: '学生列表', value: 'STUDENT' },
+  { label: '教师列表', value: 'TEACHER' }
+]
 const editForm = reactive({
   id: null,
   username: '',
@@ -250,7 +255,7 @@ const form = reactive({
   username: '',
   realName: '',
   password: '',
-  roleIds: [],
+  roleId: null,
   studentNo: '',
   enrollmentYear: '',
   teachingClassIds: []
@@ -266,30 +271,31 @@ const roleTagType = (code) => {
   return typeMap[code] || 'info'
 }
 
+const isStudentList = computed(() => query.roleCode === 'STUDENT')
+const createRoleOptions = computed(() => roleOptions.value.filter((role) => ['STUDENT', 'TEACHER'].includes(role.code)))
 const createFormIsStudent = computed(() => {
-  const studentRole = roleOptions.value.find((role) => role.code === 'STUDENT')
+  const studentRole = createRoleOptions.value.find((role) => role.code === 'STUDENT')
   if (!studentRole) {
     return false
   }
-  return (form.roleIds || []).some((roleId) => String(roleId) === String(studentRole.id))
+  return String(form.roleId) === String(studentRole.id)
 })
 
 watch(createFormIsStudent, (isStudent) => {
-  if (!isStudent) {
-    form.studentNo = ''
-    form.enrollmentYear = ''
-    form.teachingClassIds = []
+  if (isStudent) {
+    form.username = form.studentNo || ''
+    return
   }
+  form.studentNo = ''
+  form.enrollmentYear = ''
+  form.teachingClassIds = []
 })
 
 watch(
   () => form.studentNo,
-  (value, oldValue) => {
+  (value) => {
     if (!createFormIsStudent.value) return
-    const oldText = oldValue || ''
-    if (!form.username || form.username === oldText) {
-      form.username = value || ''
-    }
+    form.username = value || ''
   }
 )
 
@@ -326,16 +332,27 @@ const resetSearch = () => {
   search()
 }
 
+const handleRoleCodeChange = () => {
+  query.pageNum = 1
+  selectedRows.value = []
+  load()
+}
+
 const handleSizeChange = () => {
   query.pageNum = 1
   load()
+}
+
+const defaultCreateRoleId = () => {
+  const targetRole = createRoleOptions.value.find((role) => role.code === query.roleCode)
+  return targetRole ? targetRole.id : null
 }
 
 const resetCreateForm = () => {
   form.username = ''
   form.realName = ''
   form.password = ''
-  form.roleIds = []
+  form.roleId = defaultCreateRoleId()
   form.studentNo = ''
   form.enrollmentYear = ''
   form.teachingClassIds = []
@@ -356,15 +373,19 @@ const create = async () => {
   const studentNo = isStudent ? ((form.studentNo || '').trim() || null) : null
   const enrollmentYear = isStudent ? ((form.enrollmentYear || '').trim() || null) : null
   const username = ((form.username || '').trim()) || (isStudent ? (studentNo || '') : '')
+  if (!form.roleId) {
+    ElMessage.warning('请选择角色')
+    return
+  }
   if (!username) {
-    ElMessage.warning('请输入用户名')
+    ElMessage.warning(isStudent ? '请输入学号' : '请输入用户名')
     return
   }
   const payload = {
     username,
     realName,
     password: form.password,
-    roleIds: form.roleIds,
+    roleIds: [form.roleId],
     studentNo,
     enrollmentYear,
     teachingClassIds: isStudent ? form.teachingClassIds : []
@@ -433,17 +454,6 @@ const batchUser = async (action) => {
     action
   })
   ElMessage.success('批量操作成功')
-  await load()
-}
-
-const batchAssignRoles = async () => {
-  await batchUsersApi({
-    userIds: selectedRows.value.map((item) => item.id),
-    action: 'ASSIGN_ROLES',
-    roleIds: batchRoleIds.value
-  })
-  ElMessage.success('角色分配成功')
-  batchRoleIds.value = []
   await load()
 }
 
@@ -555,7 +565,7 @@ onMounted(async () => {
   gap: 8px;
 }
 
-.batch-select {
+.role-filter-select {
   width: 240px;
 }
 
@@ -651,7 +661,7 @@ onMounted(async () => {
   }
 
   .keyword-input,
-  .batch-select {
+  .role-filter-select {
     width: 100%;
   }
 }

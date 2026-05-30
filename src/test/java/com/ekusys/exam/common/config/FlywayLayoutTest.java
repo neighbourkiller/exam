@@ -48,4 +48,20 @@ class FlywayLayoutTest {
         assertTrue(schema.contains("Legacy reference only."));
         assertTrue(data.contains("Legacy reference only."));
     }
+
+    @Test
+    void studentProfileShouldHaveUniqueStudentNoIndex() throws Exception {
+        String schema = new String(
+            new ClassPathResource("schema.sql").getInputStream().readAllBytes(),
+            StandardCharsets.UTF_8
+        );
+        String migration = new String(
+            new ClassPathResource("db/migration/V12__add_unique_student_no_index.sql").getInputStream().readAllBytes(),
+            StandardCharsets.UTF_8
+        );
+
+        assertTrue(schema.contains("UNIQUE KEY uk_student_profile_student_no (student_no)"));
+        assertTrue(migration.contains("UPDATE student_profile"));
+        assertTrue(migration.contains("ADD UNIQUE KEY uk_student_profile_student_no (student_no)"));
+    }
 }

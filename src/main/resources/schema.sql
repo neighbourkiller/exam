@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS student_profile (
     update_time DATETIME,
     create_by BIGINT,
     update_by BIGINT,
-    UNIQUE KEY uk_student_profile_user (user_id)
+    UNIQUE KEY uk_student_profile_user (user_id),
+    UNIQUE KEY uk_student_profile_student_no (student_no)
 );
 
 CREATE TABLE IF NOT EXISTS teacher_profile (

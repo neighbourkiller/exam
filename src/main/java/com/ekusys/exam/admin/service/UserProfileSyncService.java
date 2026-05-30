@@ -91,6 +91,21 @@ public class UserProfileSyncService {
         ));
     }
 
+    public void validateStudentNoAvailable(Long currentUserId, String studentNo) {
+        String normalizedStudentNo = normalizeText(studentNo);
+        if (normalizedStudentNo == null) {
+            return;
+        }
+        List<StudentProfile> profiles = studentProfileMapper.selectList(
+            new LambdaQueryWrapper<StudentProfile>().eq(StudentProfile::getStudentNo, normalizedStudentNo)
+        );
+        boolean occupied = profiles.stream()
+            .anyMatch(profile -> !Objects.equals(profile.getUserId(), currentUserId));
+        if (occupied) {
+            throw new BusinessException("学号已存在");
+        }
+    }
+
     @Transactional
     public void syncProfilesByRoleCodes(Long userId, List<String> roleCodes) {
         if (roleCodes.contains(ROLE_STUDENT)) {
@@ -125,6 +140,9 @@ public class UserProfileSyncService {
 
     @Transactional
     public void syncStudentProfile(Long userId, String studentNo, String enrollmentYear) {
+        String normalizedStudentNo = normalizeText(studentNo);
+        String normalizedEnrollmentYear = normalizeText(enrollmentYear);
+        validateStudentNoAvailable(userId, normalizedStudentNo);
         StudentProfile profile = studentProfileMapper.selectOne(
             new LambdaQueryWrapper<StudentProfile>().eq(StudentProfile::getUserId, userId).last("limit 1")
         );
@@ -132,18 +150,20 @@ public class UserProfileSyncService {
             profile = new StudentProfile();
             profile.setUserId(userId);
             profile.setStatus("ACTIVE");
-            profile.setStudentNo(normalizeText(studentNo));
-            profile.setEnrollmentYear(normalizeText(enrollmentYear));
+            profile.setStudentNo(normalizedStudentNo);
+            profile.setEnrollmentYear(normalizedEnrollmentYear);
             studentProfileMapper.insert(profile);
             return;
         }
-        profile.setStudentNo(normalizeText(studentNo));
-        profile.setEnrollmentYear(normalizeText(enrollmentYear));
+        profile.setStudentNo(normalizedStudentNo);
+        profile.setEnrollmentYear(normalizedEnrollmentYear);
         studentProfileMapper.updateById(profile);
     }
 
     @Transactional
     public void syncStudentNo(Long userId, String studentNo) {
+        String normalizedStudentNo = normalizeText(studentNo);
+        validateStudentNoAvailable(userId, normalizedStudentNo);
         StudentProfile profile = studentProfileMapper.selectOne(
             new LambdaQueryWrapper<StudentProfile>().eq(StudentProfile::getUserId, userId).last("limit 1")
         );
@@ -151,11 +171,11 @@ public class UserProfileSyncService {
             profile = new StudentProfile();
             profile.setUserId(userId);
             profile.setStatus("ACTIVE");
-            profile.setStudentNo(normalizeText(studentNo));
+            profile.setStudentNo(normalizedStudentNo);
             studentProfileMapper.insert(profile);
             return;
         }
-        profile.setStudentNo(normalizeText(studentNo));
+        profile.setStudentNo(normalizedStudentNo);
         studentProfileMapper.updateById(profile);
     }
 

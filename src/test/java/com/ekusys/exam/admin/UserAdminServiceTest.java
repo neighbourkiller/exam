@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -143,6 +144,7 @@ class UserAdminServiceTest {
         request.setPageNum(1);
         request.setPageSize(20);
         request.setKeyword(" Alice ");
+        request.setRoleCode("STUDENT");
         PageResponse<UserView> result = userAdminService.queryUsers(request);
 
         assertEquals(1, result.getTotal());
@@ -152,6 +154,17 @@ class UserAdminServiceTest {
         verify(userMapper).selectPage(any(Page.class), wrapperCaptor.capture());
         assertTrue(wrapperCaptor.getValue().getSqlSegment().contains("sys_role"));
         assertTrue(wrapperCaptor.getValue().getSqlSegment().contains("ADMIN"));
+        assertTrue(wrapperCaptor.getValue().getSqlSegment().contains("STUDENT"));
+    }
+
+    @Test
+    void queryUsersShouldRejectUnsupportedRoleFilter() {
+        UserQueryRequest request = new UserQueryRequest();
+        request.setRoleCode("ADMIN");
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> userAdminService.queryUsers(request));
+
+        assertEquals("不支持的用户角色筛选", ex.getMessage());
     }
 
     @Test
@@ -166,5 +179,40 @@ class UserAdminServiceTest {
 
         BusinessException ex = assertThrows(BusinessException.class, () -> userAdminService.createUser(request));
         assertEquals("请填写密码或配置 APP_DEFAULT_PASSWORD", ex.getMessage());
+    }
+
+    @Test
+    void validateCreateUserShouldRejectDuplicateStudentNoForStudentRole() {
+        when(userMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(roleAdminService.validateRoleAssignment(List.of(3L), List.of(3301L))).thenReturn(List.of("STUDENT"));
+        org.mockito.Mockito.doThrow(new BusinessException("学号已存在"))
+            .when(userProfileSyncService).validateStudentNoAvailable(null, "S001");
+
+        UserCreateRequest request = new UserCreateRequest();
+        request.setUsername("S001");
+        request.setRealName("Alice");
+        request.setRoleIds(List.of(3L));
+        request.setTeachingClassIds(List.of(3301L));
+        request.setStudentNo("S001");
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> userAdminService.validateCreateUser(request));
+
+        assertEquals("学号已存在", ex.getMessage());
+    }
+
+    @Test
+    void validateCreateUserShouldNotCheckStudentNoForNonStudentRole() {
+        when(userMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(roleAdminService.validateRoleAssignment(List.of(2L), null)).thenReturn(List.of("TEACHER"));
+
+        UserCreateRequest request = new UserCreateRequest();
+        request.setUsername("teacher01");
+        request.setRealName("Teacher");
+        request.setRoleIds(List.of(2L));
+        request.setStudentNo("S001");
+
+        userAdminService.validateCreateUser(request);
+
+        verify(userProfileSyncService, never()).validateStudentNoAvailable(any(), any());
     }
 }

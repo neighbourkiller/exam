@@ -90,10 +90,11 @@ public class AdminBulkService {
         int success = 0;
         for (AdminCsvImportService.CsvRow row : csv.rows()) {
             try {
-                validateRequired(row, "username", "realName");
-                String username = value(row, "username");
+                String usernameField = "STUDENT".equals(roleCode) ? "studentNo" : "username";
+                validateRequired(row, usernameField, "realName");
+                String username = value(row, usernameField);
                 if (!seenUsernames.add(username)) {
-                    throw new RowException("username", "用户名在导入文件中重复", username);
+                    throw new RowException(usernameField, duplicateUsernameMessage(roleCode), username);
                 }
                 UserCreateRequest request = buildUserCreateRequest(row, roleCode, targetRole.getId(), username);
                 if (!dryRun) {
@@ -352,6 +353,10 @@ public class AdminBulkService {
             request.setTeachingClassIds(parseLongList(value(row, "teachingClassIds")));
         }
         return request;
+    }
+
+    private String duplicateUsernameMessage(String roleCode) {
+        return "STUDENT".equals(roleCode) ? "学号在导入文件中重复" : "用户名在导入文件中重复";
     }
 
     private String normalizeRole(String role) {

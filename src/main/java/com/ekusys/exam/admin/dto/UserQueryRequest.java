@@ -8,4 +8,5 @@ public class UserQueryRequest {
     private long pageNum = 1;
     private long pageSize = 10;
     private String keyword;
+    private String roleCode;
 }

@@ -28,8 +28,11 @@ public class UserAdminService {
     private static final Logger log = LoggerFactory.getLogger(UserAdminService.class);
     private static final String ROLE_ADMIN = "ADMIN";
     private static final String ROLE_STUDENT = "STUDENT";
+    private static final String ROLE_TEACHER = "TEACHER";
     private static final String ADMIN_USER_ID_SQL =
         "select ur.user_id from sys_user_role ur join sys_role r on ur.role_id = r.id where r.code = '" + ROLE_ADMIN + "'";
+    private static final String ROLE_USER_ID_SQL_TEMPLATE =
+        "select ur.user_id from sys_user_role ur join sys_role r on ur.role_id = r.id where r.code = '%s'";
 
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
@@ -61,6 +64,10 @@ public class UserAdminService {
     public PageResponse<UserView> queryUsers(UserQueryRequest request) {
         QueryWrapper<User> wrapper = new QueryWrapper<>();
         wrapper.notInSql("id", ADMIN_USER_ID_SQL);
+        String roleCode = normalizeRoleCode(request.getRoleCode());
+        if (roleCode != null) {
+            wrapper.inSql("id", String.format(ROLE_USER_ID_SQL_TEMPLATE, roleCode));
+        }
         String keyword = normalizeText(request.getKeyword());
         if (keyword != null) {
             wrapper.and(q -> q
@@ -164,7 +171,10 @@ public class UserAdminService {
     public void validateCreateUser(UserCreateRequest request) {
         ensureUsernameAvailable(request.getUsername());
         resolvePassword(request.getPassword());
-        roleAdminService.validateRoleAssignment(request.getRoleIds(), request.getTeachingClassIds());
+        List<String> roleCodes = roleAdminService.validateRoleAssignment(request.getRoleIds(), request.getTeachingClassIds());
+        if (roleCodes.contains(ROLE_STUDENT)) {
+            userProfileSyncService.validateStudentNoAvailable(null, request.getStudentNo());
+        }
     }
 
     private void ensureUsernameAvailable(String username) {
@@ -198,5 +208,16 @@ public class UserAdminService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String normalizeRoleCode(String roleCode) {
+        String normalized = normalizeText(roleCode);
+        if (normalized == null) {
+            return null;
+        }
+        if (ROLE_STUDENT.equals(normalized) || ROLE_TEACHER.equals(normalized)) {
+            return normalized;
+        }
+        throw new BusinessException("不支持的用户角色筛选");
     }
 }
