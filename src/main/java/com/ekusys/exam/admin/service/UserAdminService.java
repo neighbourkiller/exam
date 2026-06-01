@@ -87,7 +87,9 @@ public class UserAdminService {
 
         List<Long> userIds = page.getRecords().stream().map(User::getId).toList();
         Map<Long, List<com.ekusys.exam.admin.dto.RoleView>> userRoleViewMap = roleAdminService.buildUserRoleViewMap(userIds);
-        Map<Long, List<com.ekusys.exam.admin.dto.TeachingClassView>> userTeachingClassMap = userProfileSyncService.buildUserTeachingClassMap(userIds);
+        Map<Long, List<com.ekusys.exam.admin.dto.TeachingClassView>> userTeachingClassMap = ROLE_TEACHER.equals(roleCode)
+            ? userProfileSyncService.buildTeacherTeachingClassMap(userIds)
+            : userProfileSyncService.buildUserTeachingClassMap(userIds);
         Map<Long, StudentProfile> studentProfileMap = userProfileSyncService.buildStudentProfileMap(userIds);
 
         List<UserView> users = page.getRecords().stream().map(user -> {

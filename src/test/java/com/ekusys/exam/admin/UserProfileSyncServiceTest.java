@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ekusys.exam.admin.dto.TeachingClassView;
 import com.ekusys.exam.admin.service.TeachingClassAdminService;
 import com.ekusys.exam.admin.service.UserProfileSyncService;
 import com.ekusys.exam.common.exception.BusinessException;
@@ -19,6 +20,7 @@ import com.ekusys.exam.repository.mapper.StudentTeachingClassMapper;
 import com.ekusys.exam.repository.mapper.TeacherProfileMapper;
 import com.ekusys.exam.repository.mapper.TeachingClassMapper;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,6 +52,34 @@ class UserProfileSyncServiceTest {
             teacherProfileMapper,
             teachingClassAdminService
         );
+    }
+
+    @Test
+    void buildTeacherTeachingClassMapShouldGroupClassesByTeacherId() {
+        TeachingClass first = new TeachingClass();
+        first.setId(3301L);
+        first.setTeacherId(2001L);
+        TeachingClass second = new TeachingClass();
+        second.setId(3302L);
+        second.setTeacherId(2001L);
+        List<TeachingClass> classes = List.of(first, second);
+        when(teachingClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(classes);
+        TeachingClassView firstView = TeachingClassView.builder()
+            .id(3301L)
+            .teacherId(2001L)
+            .name("数学一班")
+            .build();
+        TeachingClassView secondView = TeachingClassView.builder()
+            .id(3302L)
+            .teacherId(2001L)
+            .name("数学二班")
+            .build();
+        when(teachingClassAdminService.toTeachingClassViews(classes)).thenReturn(List.of(firstView, secondView));
+
+        Map<Long, List<TeachingClassView>> result = userProfileSyncService.buildTeacherTeachingClassMap(List.of(2001L));
+
+        assertEquals(1, result.size());
+        assertEquals(List.of(firstView, secondView), result.get(2001L));
     }
 
     @Test

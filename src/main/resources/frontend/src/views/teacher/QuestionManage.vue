@@ -334,7 +334,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, onMounted, watch } from 'vue'
+import { computed, reactive, ref, onMounted, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createQuestionApi,
@@ -650,6 +650,7 @@ const openEditDialog = async (row) => {
     syncAnswerControlsFromRaw()
     createDialogVisible.value = true
   } finally {
+    await nextTick()
     formHydrating.value = false
   }
 }

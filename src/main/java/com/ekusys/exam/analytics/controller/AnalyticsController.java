@@ -3,6 +3,7 @@ package com.ekusys.exam.analytics.controller;
 import com.ekusys.exam.analytics.dto.ClassTrendItem;
 import com.ekusys.exam.analytics.dto.ExamOverviewItem;
 import com.ekusys.exam.analytics.dto.ScoreDistributionItem;
+import com.ekusys.exam.analytics.dto.StudentScoreItem;
 import com.ekusys.exam.analytics.dto.WrongTopicItem;
 import com.ekusys.exam.analytics.service.AnalyticsService;
 import com.ekusys.exam.common.api.ApiResponse;
@@ -44,5 +45,10 @@ public class AnalyticsController {
     public ApiResponse<List<WrongTopicItem>> wrongTopics(@PathVariable Long examId,
                                                          @RequestParam(defaultValue = "10") Integer topN) {
         return ApiResponse.ok(analyticsService.wrongTopics(examId, topN));
+    }
+
+    @GetMapping("/exams/{examId}/student-scores")
+    public ApiResponse<List<StudentScoreItem>> studentScores(@PathVariable Long examId) {
+        return ApiResponse.ok(analyticsService.studentScores(examId));
     }
 }

@@ -214,7 +214,7 @@
         </div>
         <dl class="student-profile-details">
           <div class="student-profile-details__item">
-            <dt>真名</dt>
+            <dt>姓名</dt>
             <dd>{{ displayProfileValue(profile.realName) }}</dd>
           </div>
           <div class="student-profile-details__item">

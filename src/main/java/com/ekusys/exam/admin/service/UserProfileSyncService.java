@@ -78,6 +78,29 @@ public class UserProfileSyncService {
         return result;
     }
 
+    public Map<Long, List<TeachingClassView>> buildTeacherTeachingClassMap(List<Long> teacherIds) {
+        if (teacherIds == null || teacherIds.isEmpty()) {
+            return Map.of();
+        }
+        List<TeachingClass> classes = teachingClassMapper.selectList(
+            new LambdaQueryWrapper<TeachingClass>()
+                .in(TeachingClass::getTeacherId, teacherIds)
+                .orderByAsc(TeachingClass::getSubjectId, TeachingClass::getId)
+        );
+        if (classes.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, List<TeachingClassView>> result = new java.util.HashMap<>();
+        for (TeachingClassView view : teachingClassAdminService.toTeachingClassViews(classes)) {
+            if (view.getTeacherId() == null) {
+                continue;
+            }
+            result.computeIfAbsent(view.getTeacherId(), key -> new ArrayList<>()).add(view);
+        }
+        return result;
+    }
+
     public Map<Long, StudentProfile> buildStudentProfileMap(List<Long> userIds) {
         if (userIds == null || userIds.isEmpty()) {
             return Map.of();

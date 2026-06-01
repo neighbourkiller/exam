@@ -71,19 +71,20 @@
         <el-table-column label="难度">
           <template #default="scope">
             <el-select v-model="scope.row.difficulty" size="small">
+              <el-option :value="AUTO_DIFFICULTY_ALL" label="不限" />
               <el-option value="EASY" label="简单" />
               <el-option value="MEDIUM" label="中等" />
               <el-option value="HARD" label="困难" />
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column label="数量" width="120">
+        <el-table-column label="数量" width="150">
           <template #default="scope"><el-input-number v-model="scope.row.count" :min="1" size="small" /></template>
         </el-table-column>
-        <el-table-column label="分值" width="120">
+        <el-table-column label="分值" width="150">
           <template #default="scope"><el-input-number v-model="scope.row.score" :min="1" size="small" /></template>
         </el-table-column>
-        <el-table-column label="操作" width="90">
+        <el-table-column label="操作" width="100">
           <template #default="scope">
             <el-button type="danger" text @click="removeRule(scope.$index)">删除</el-button>
           </template>
@@ -387,11 +388,20 @@ import {
 } from '../../api'
 import { formatDateTime } from '../../utils/datetime'
 
+const AUTO_DIFFICULTY_ALL = 'ALL'
+const DEFAULT_AUTO_RULES = [
+  { type: 'SINGLE', difficulty: AUTO_DIFFICULTY_ALL, count: 5, score: 5 },
+  { type: 'MULTI', difficulty: AUTO_DIFFICULTY_ALL, count: 5, score: 5 },
+  { type: 'JUDGE', difficulty: AUTO_DIFFICULTY_ALL, count: 3, score: 2 },
+  { type: 'BLANK', difficulty: AUTO_DIFFICULTY_ALL, count: 2, score: 2 },
+  { type: 'SHORT', difficulty: AUTO_DIFFICULTY_ALL, count: 4, score: 10 }
+]
+
 const autoForm = reactive({
   name: 'Java 自动组卷',
   subjectId: null,
   description: '自动生成',
-  rules: [{ type: 'SINGLE', difficulty: 'EASY', count: 5, score: 2 }]
+  rules: DEFAULT_AUTO_RULES.map(rule => ({ ...rule }))
 })
 
 const subjectOptions = ref([])
@@ -514,7 +524,7 @@ const loadSubjectOptions = async () => {
 }
 
 const addRule = () => {
-  autoForm.rules.push({ type: 'SINGLE', difficulty: 'EASY', count: 1, score: 2 })
+  autoForm.rules.push({ type: 'SINGLE', difficulty: AUTO_DIFFICULTY_ALL, count: 1, score: 2 })
 }
 
 const removeRule = (index) => {
@@ -530,7 +540,14 @@ const autoCreate = async () => {
     ElMessage.warning('请选择课程')
     return
   }
-  const id = await createAutoPaperApi(autoForm)
+  const payload = {
+    ...autoForm,
+    rules: autoForm.rules.map(rule => ({
+      ...rule,
+      difficulty: rule.difficulty === AUTO_DIFFICULTY_ALL ? null : rule.difficulty
+    }))
+  }
+  const id = await createAutoPaperApi(payload)
   ElMessage.success(`组卷成功，试卷ID=${id}`)
   await loadPaperList()
 }

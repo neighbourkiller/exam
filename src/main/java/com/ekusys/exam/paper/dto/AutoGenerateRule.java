@@ -12,7 +12,6 @@ public class AutoGenerateRule {
     @NotNull
     private QuestionType type;
 
-    @NotNull
     private Difficulty difficulty;
 
     @NotNull

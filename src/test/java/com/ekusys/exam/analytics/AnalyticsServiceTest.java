@@ -9,19 +9,26 @@ import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.ekusys.exam.analytics.dto.ExamOverviewItem;
+import com.ekusys.exam.analytics.dto.StudentScoreItem;
 import com.ekusys.exam.analytics.dto.WrongTopicItem;
 import com.ekusys.exam.common.exception.BusinessException;
 import com.ekusys.exam.common.security.SecurityUtils;
 import com.ekusys.exam.analytics.service.AnalyticsService;
 import com.ekusys.exam.exam.service.ExamPermissionService;
 import com.ekusys.exam.repository.entity.Exam;
+import com.ekusys.exam.repository.entity.ExamTargetClass;
 import com.ekusys.exam.repository.entity.Question;
+import com.ekusys.exam.repository.entity.StudentProfile;
+import com.ekusys.exam.repository.entity.StudentTeachingClass;
 import com.ekusys.exam.repository.entity.Submission;
 import com.ekusys.exam.repository.entity.SubmissionAnswer;
+import com.ekusys.exam.repository.entity.TeachingClass;
+import com.ekusys.exam.repository.entity.User;
 import com.ekusys.exam.repository.mapper.ExamMapper;
 import com.ekusys.exam.repository.mapper.ExamTargetClassMapper;
 import com.ekusys.exam.repository.mapper.PaperMapper;
 import com.ekusys.exam.repository.mapper.QuestionMapper;
+import com.ekusys.exam.repository.mapper.StudentProfileMapper;
 import com.ekusys.exam.repository.mapper.StudentTeachingClassMapper;
 import com.ekusys.exam.repository.mapper.SubmissionAnswerMapper;
 import com.ekusys.exam.repository.mapper.SubmissionMapper;
@@ -53,6 +60,9 @@ class AnalyticsServiceTest {
     private PaperMapper paperMapper;
 
     @Mock
+    private StudentProfileMapper studentProfileMapper;
+
+    @Mock
     private StudentTeachingClassMapper studentTeachingClassMapper;
 
     @Mock
@@ -73,10 +83,13 @@ class AnalyticsServiceTest {
             submissionMapper,
             submissionAnswerMapper,
             examMapper,
+            examTargetClassMapper,
             paperMapper,
+            studentProfileMapper,
             studentTeachingClassMapper,
             teachingClassMapper,
             questionMapper,
+            userMapper,
             new ExamPermissionService(userMapper, examTargetClassMapper, teachingClassMapper)
         );
     }
@@ -213,6 +226,53 @@ class AnalyticsServiceTest {
         }
     }
 
+    @Test
+    void studentScoresShouldListTargetClassStudentsWithSubmissionScores() {
+        Exam exam = new Exam();
+        exam.setId(100L);
+        exam.setPublisherId(200L);
+        when(examMapper.selectById(100L)).thenReturn(exam);
+        when(examTargetClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(targetClass(100L, 11L)));
+        when(teachingClassMapper.selectBatchIds(any())).thenReturn(List.of(teachingClass(11L, "数据库原理-1班")));
+        when(studentTeachingClassMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
+            enrollment(2001L, 11L),
+            enrollment(2002L, 11L)
+        ));
+        when(userMapper.selectBatchIds(any())).thenReturn(List.of(
+            user(2001L, "S001", "张三"),
+            user(2002L, "S002", "李四")
+        ));
+        when(studentProfileMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(
+            profile(2001L, "S001"),
+            profile(2002L, "S002")
+        ));
+        Submission graded = submission(1L, 88);
+        graded.setStudentId(2001L);
+        graded.setStatus("GRADED");
+        graded.setObjectiveScore(48);
+        graded.setSubjectiveScore(40);
+        graded.setPassFlag(true);
+        when(submissionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(graded));
+
+        List<StudentScoreItem> items;
+        try (var mocked = mockStatic(SecurityUtils.class)) {
+            mocked.when(SecurityUtils::getCurrentUserId).thenReturn(200L);
+            items = analyticsService.studentScores(100L);
+        }
+
+        assertEquals(2, items.size());
+        assertEquals(2001L, items.get(0).getStudentId());
+        assertEquals("S001", items.get(0).getStudentNo());
+        assertEquals("张三", items.get(0).getStudentName());
+        assertEquals(List.of("数据库原理-1班"), items.get(0).getClassNames());
+        assertEquals("GRADED", items.get(0).getSubmissionStatus());
+        assertEquals(88, items.get(0).getTotalScore());
+        assertEquals(true, items.get(0).getSubmitted());
+        assertEquals(2002L, items.get(1).getStudentId());
+        assertNull(items.get(1).getSubmissionId());
+        assertEquals(false, items.get(1).getSubmitted());
+    }
+
     private Submission submission(Long id, Integer totalScore) {
         Submission submission = new Submission();
         submission.setId(id);
@@ -235,5 +295,42 @@ class AnalyticsServiceTest {
         question.setId(id);
         question.setContent(content);
         return question;
+    }
+
+    private ExamTargetClass targetClass(Long examId, Long classId) {
+        ExamTargetClass targetClass = new ExamTargetClass();
+        targetClass.setExamId(examId);
+        targetClass.setClassId(classId);
+        return targetClass;
+    }
+
+    private TeachingClass teachingClass(Long id, String name) {
+        TeachingClass teachingClass = new TeachingClass();
+        teachingClass.setId(id);
+        teachingClass.setName(name);
+        return teachingClass;
+    }
+
+    private StudentTeachingClass enrollment(Long studentId, Long classId) {
+        StudentTeachingClass enrollment = new StudentTeachingClass();
+        enrollment.setStudentId(studentId);
+        enrollment.setTeachingClassId(classId);
+        enrollment.setEnrollStatus("ACTIVE");
+        return enrollment;
+    }
+
+    private User user(Long id, String username, String realName) {
+        User user = new User();
+        user.setId(id);
+        user.setUsername(username);
+        user.setRealName(realName);
+        return user;
+    }
+
+    private StudentProfile profile(Long userId, String studentNo) {
+        StudentProfile profile = new StudentProfile();
+        profile.setUserId(userId);
+        profile.setStudentNo(studentNo);
+        return profile;
     }
 }

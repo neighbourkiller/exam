@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.ekusys.exam.admin.dto.TeachingClassView;
 import com.ekusys.exam.admin.dto.UserCreateRequest;
 import com.ekusys.exam.admin.dto.UserUpdateRequest;
 import com.ekusys.exam.admin.dto.UserQueryRequest;
@@ -155,6 +156,40 @@ class UserAdminServiceTest {
         assertTrue(wrapperCaptor.getValue().getSqlSegment().contains("sys_role"));
         assertTrue(wrapperCaptor.getValue().getSqlSegment().contains("ADMIN"));
         assertTrue(wrapperCaptor.getValue().getSqlSegment().contains("STUDENT"));
+    }
+
+    @Test
+    void queryUsersShouldExposeTeacherTeachingClassesForTeacherFilter() {
+        User user = new User();
+        user.setId(2001L);
+        user.setUsername("teacher01");
+        user.setRealName("Teacher");
+        user.setEnabled(true);
+        Page<User> page = new Page<>(1, 20);
+        page.setRecords(List.of(user));
+        page.setTotal(1);
+        when(userMapper.selectPage(any(Page.class), any(QueryWrapper.class))).thenReturn(page);
+        when(roleAdminService.buildUserRoleViewMap(List.of(2001L))).thenReturn(Map.of());
+        TeachingClassView teachingClass = TeachingClassView.builder()
+            .id(3301L)
+            .name("数学一班")
+            .subjectName("数学")
+            .teacherId(2001L)
+            .build();
+        when(userProfileSyncService.buildTeacherTeachingClassMap(List.of(2001L))).thenReturn(Map.of(2001L, List.of(teachingClass)));
+        when(userProfileSyncService.buildStudentProfileMap(List.of(2001L))).thenReturn(Map.of());
+
+        UserQueryRequest request = new UserQueryRequest();
+        request.setPageNum(1);
+        request.setPageSize(20);
+        request.setRoleCode("TEACHER");
+        PageResponse<UserView> result = userAdminService.queryUsers(request);
+
+        assertEquals(1, result.getTotal());
+        assertEquals(1, result.getRecords().get(0).getTeachingClasses().size());
+        assertEquals(3301L, result.getRecords().get(0).getTeachingClasses().get(0).getId());
+        verify(userProfileSyncService).buildTeacherTeachingClassMap(List.of(2001L));
+        verify(userProfileSyncService, never()).buildUserTeachingClassMap(any());
     }
 
     @Test

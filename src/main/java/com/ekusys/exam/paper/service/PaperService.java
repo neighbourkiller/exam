@@ -99,21 +99,22 @@ public class PaperService {
             if (rule.getScore() == null || rule.getScore() < 1) {
                 throw new BusinessException("自动组卷规则分值必须大于0");
             }
-            if (rule.getType() == null || rule.getDifficulty() == null) {
+            if (rule.getType() == null) {
                 throw new BusinessException("自动组卷规则不完整");
             }
+            String difficulty = rule.getDifficulty() == null ? null : rule.getDifficulty().name();
 
             List<Question> pool = questionMapper.selectList(new LambdaQueryWrapper<Question>()
                 .eq(Question::getSubjectId, request.getSubjectId())
                 .eq(Question::getType, rule.getType().name())
-                .eq(Question::getDifficulty, rule.getDifficulty().name())
+                .eq(difficulty != null, Question::getDifficulty, difficulty)
                 .notIn(!picked.isEmpty(), Question::getId, picked)
                 .last("order by rand() limit " + rule.getCount()));
 
             if (pool.size() < rule.getCount()) {
                 throw new BusinessException(
                     "题量不足：题型=" + rule.getType().name()
-                        + "，难度=" + rule.getDifficulty().name()
+                        + "，难度=" + difficultyLabel(difficulty)
                         + "，需要" + rule.getCount() + "题，实际仅" + pool.size() + "题"
                 );
             }
@@ -394,6 +395,10 @@ public class PaperService {
 
     private boolean isCurrentUserAdmin() {
         return SecurityUtils.getCurrentRoles().contains("ADMIN");
+    }
+
+    private String difficultyLabel(String difficulty) {
+        return difficulty == null ? "不限" : difficulty;
     }
 
     private String toIdString(Long id) {

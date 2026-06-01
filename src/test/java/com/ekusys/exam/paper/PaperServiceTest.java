@@ -133,6 +133,29 @@ class PaperServiceTest {
     }
 
     @Test
+    void autoGenerateShouldSupportAnyDifficulty() {
+        AutoGenerateRule rule = new AutoGenerateRule();
+        rule.setType(QuestionType.SINGLE);
+        rule.setDifficulty(null);
+        rule.setCount(2);
+        rule.setScore(5);
+
+        AutoGeneratePaperRequest request = new AutoGeneratePaperRequest();
+        request.setName("自动卷");
+        request.setSubjectId(5001L);
+        request.setRules(List.of(rule));
+
+        Question q1 = buildQuestion(11L, 5001L);
+        Question q2 = buildQuestion(12L, 5001L);
+
+        when(questionMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(q1, q2));
+        when(questionMapper.selectBatchIds(any())).thenReturn(List.of(q1, q2));
+
+        Long paperId = paperService.autoGenerate(request);
+        assertEquals(9001L, paperId);
+    }
+
+    @Test
     void autoGenerateShouldFailWhenPoolNotEnough() {
         AutoGenerateRule rule = new AutoGenerateRule();
         rule.setType(QuestionType.SINGLE);

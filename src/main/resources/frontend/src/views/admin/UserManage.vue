@@ -78,7 +78,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column v-if="isStudentList" label="教学班" min-width="220">
+        <el-table-column label="教学班" min-width="240">
           <template #default="scope">
             <div class="class-list">
               <span v-if="!(scope.row.teachingClasses || []).length" class="muted-text">-</span>
@@ -86,9 +86,9 @@
                 v-for="item in scope.row.teachingClasses || []"
                 :key="item.id"
                 class="class-item"
-                :title="`${item.id} - ${item.name || ''}`"
+                :title="teachingClassDisplay(item)"
               >
-                {{ item.id }} - {{ item.name || '-' }}
+                {{ teachingClassDisplay(item) }}
               </span>
             </div>
           </template>
@@ -136,9 +136,6 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12">
-            <el-form-item label="密码"><el-input v-model="form.password" show-password /></el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12">
             <el-form-item label="角色">
               <el-select v-model="form.roleId" placeholder="请选择角色">
                 <el-option v-for="role in createRoleOptions" :key="role.id" :label="role.name || role.code" :value="role.id" />
@@ -152,7 +149,14 @@
           </el-col>
           <el-col v-if="createFormIsStudent" :xs="24" :sm="12">
             <el-form-item label="入学年份">
-              <el-input v-model="form.enrollmentYear" clearable maxlength="4" placeholder="如 2026" />
+              <el-date-picker
+                v-model="form.enrollmentYear"
+                type="year"
+                format="YYYY"
+                value-format="YYYY"
+                clearable
+                placeholder="请选择年份"
+              />
             </el-form-item>
           </el-col>
           <el-col v-if="createFormIsStudent" :xs="24">
@@ -176,7 +180,7 @@
     </el-dialog>
 
     <el-dialog v-model="editDialogVisible" title="修改用户" width="560px">
-      <el-form :model="editForm" label-width="110px">
+      <el-form :model="editForm" label-width="110px" class="user-form">
         <el-form-item label="用户名">
           <el-input v-model="editForm.username" disabled />
         </el-form-item>
@@ -191,7 +195,14 @@
             <el-input v-model="editForm.studentNo" clearable />
           </el-form-item>
           <el-form-item label="入学年份">
-            <el-input v-model="editForm.enrollmentYear" clearable maxlength="4" placeholder="如 2026" />
+            <el-date-picker
+              v-model="editForm.enrollmentYear"
+              type="year"
+              format="YYYY"
+              value-format="YYYY"
+              clearable
+              placeholder="请选择年份"
+            />
           </el-form-item>
           <el-form-item label="教学班">
             <el-select v-model="editForm.teachingClassIds" multiple filterable clearable placeholder="可选多个教学班">
@@ -254,7 +265,6 @@ const editForm = reactive({
 const form = reactive({
   username: '',
   realName: '',
-  password: '',
   roleId: null,
   studentNo: '',
   enrollmentYear: '',
@@ -262,6 +272,10 @@ const form = reactive({
 })
 
 const teachingClassLabel = (item) => `${item.id} - ${item.name || ''} (${item.subjectName || '未知课程'})`
+const teachingClassDisplay = (item) => {
+  const subjectName = item.subjectName ? `（${item.subjectName}）` : ''
+  return `${item.id} - ${item.name || '-'}${subjectName}`
+}
 const roleTagType = (code) => {
   const typeMap = {
     ADMIN: 'danger',
@@ -351,7 +365,6 @@ const defaultCreateRoleId = () => {
 const resetCreateForm = () => {
   form.username = ''
   form.realName = ''
-  form.password = ''
   form.roleId = defaultCreateRoleId()
   form.studentNo = ''
   form.enrollmentYear = ''
@@ -384,7 +397,6 @@ const create = async () => {
   const payload = {
     username,
     realName,
-    password: form.password,
     roleIds: [form.roleId],
     studentNo,
     enrollmentYear,
@@ -620,7 +632,8 @@ onMounted(async () => {
   justify-content: flex-end;
 }
 
-.user-form :deep(.el-select) {
+.user-form :deep(.el-select),
+.user-form :deep(.el-date-editor.el-input) {
   width: 100%;
 }
 

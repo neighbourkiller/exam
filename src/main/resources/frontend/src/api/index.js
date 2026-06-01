@@ -53,6 +53,7 @@ export const analyticsOverviewApi = (examId) => http.get(`/analytics/exams/${exa
 export const scoreDistributionApi = (examId) => http.get(`/analytics/exams/${examId}/score-distribution`)
 export const classTrendApi = (examId) => http.get(`/analytics/exams/${examId}/class-trend`)
 export const wrongTopicsApi = (examId, topN = 10) => http.get(`/analytics/exams/${examId}/wrong-topics?topN=${topN}`)
+export const studentScoresApi = (examId) => http.get(`/analytics/exams/${examId}/student-scores`)
 
 export const queryUsersApi = (data) => http.post('/admin/users/query', data)
 export const createUserApi = (data) => http.post('/admin/users', data)

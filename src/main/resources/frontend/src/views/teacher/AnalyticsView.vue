@@ -1,6 +1,5 @@
 <template>
   <div class="analytics-dashboard" v-loading="loading">
-    <!-- Header Section -->
     <header class="dashboard-header">
       <div class="header-left">
         <div class="title-wrapper">
@@ -37,6 +36,7 @@
             <template #dropdown>
               <el-dropdown-menu class="modern-dropdown">
                 <el-dropdown-item command="csv">CSV 原始数据</el-dropdown-item>
+                <el-dropdown-item command="scores">学生成绩列表</el-dropdown-item>
                 <el-dropdown-item divided command="dist">成绩分布报告</el-dropdown-item>
                 <el-dropdown-item command="trend">班级趋势报告</el-dropdown-item>
                 <el-dropdown-item command="wrong">错题统计报告</el-dropdown-item>
@@ -52,7 +52,6 @@
     </div>
 
     <main v-else class="dashboard-content">
-      <!-- Metric Cards Grid -->
       <section class="metrics-grid">
         <div v-for="item in overviewCards" :key="item.key" class="metric-card">
           <div class="metric-header">
@@ -65,12 +64,114 @@
             <div class="metric-value">
               {{ item.value }}<span class="metric-suffix">{{ item.suffix }}</span>
             </div>
-            <!-- Optional sparkline or trend indicator could go here -->
           </div>
         </div>
       </section>
 
-      <!-- Charts Section -->
+      <section class="score-list-panel">
+        <div class="section-heading">
+          <div>
+            <h2>学生成绩列表</h2>
+            <p>按目标班级汇总学生提交状态、客观分、主观分与总分。</p>
+          </div>
+          <div class="score-tools">
+            <el-input
+              v-model="scoreKeyword"
+              :prefix-icon="Search"
+              clearable
+              placeholder="搜索姓名、学号或账号"
+              class="score-search"
+            />
+            <el-select v-model="scoreStatusFilter" placeholder="提交状态" class="score-status-filter">
+              <el-option
+                v-for="item in scoreStatusOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </div>
+        </div>
+
+        <div class="score-summary-row">
+          <div class="score-summary-item">
+            <span>应考学生</span>
+            <strong>{{ scoreSummary.total }}</strong>
+          </div>
+          <div class="score-summary-item">
+            <span>已交卷</span>
+            <strong>{{ scoreSummary.submitted }}</strong>
+          </div>
+          <div class="score-summary-item">
+            <span>已出分</span>
+            <strong>{{ scoreSummary.graded }}</strong>
+          </div>
+          <div class="score-summary-item is-muted">
+            <span>未交卷</span>
+            <strong>{{ scoreSummary.notSubmitted }}</strong>
+          </div>
+        </div>
+
+        <el-table
+          :data="filteredScoreRows"
+          row-key="studentId"
+          class="score-table"
+          empty-text="暂无学生成绩数据"
+        >
+          <el-table-column type="index" label="#" width="56" />
+          <el-table-column label="学生" min-width="180">
+            <template #default="{ row }">
+              <div class="student-cell">
+                <span class="student-avatar">{{ studentInitial(row) }}</span>
+                <div>
+                  <strong>{{ row.studentName || row.username || '未命名学生' }}</strong>
+                  <span>{{ row.username || '--' }}</span>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="studentNo" label="学号" min-width="130">
+            <template #default="{ row }">{{ row.studentNo || '--' }}</template>
+          </el-table-column>
+          <el-table-column label="班级" min-width="180">
+            <template #default="{ row }">{{ formatClassNames(row.classNames) }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="108">
+            <template #default="{ row }">
+              <el-tag :type="submissionStatusTagType(row)" effect="light" round>
+                {{ submissionStatusText(row) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="客观 / 主观" width="128">
+            <template #default="{ row }">
+              <span class="score-pair">{{ formatScore(row.objectiveScore) }} / {{ formatScore(row.subjectiveScore) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="总分" width="170">
+            <template #default="{ row }">
+              <div class="score-meter">
+                <strong :class="scoreTextClass(row)">{{ formatScore(row.totalScore) }}</strong>
+                <el-progress
+                  :percentage="scorePercent(row.totalScore)"
+                  :show-text="false"
+                  :stroke-width="6"
+                  :color="scoreProgressColor(row)"
+                />
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="结果" width="92">
+            <template #default="{ row }">
+              <el-tag :type="passTagType(row)" effect="plain" round>{{ passText(row) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="提交时间" min-width="168">
+            <template #default="{ row }">{{ formatDateTime(row.submittedAt, '--') }}</template>
+          </el-table-column>
+        </el-table>
+      </section>
+
       <section class="charts-layout">
         <div class="chart-container distribution-chart">
           <div class="chart-header">
@@ -85,7 +186,7 @@
         <div class="chart-container trend-chart">
           <div class="chart-header">
             <div class="chart-title-group">
-              <h3>班级均分趋势</h3>
+              <h3>班级均分对比</h3>
               <span class="chart-tip">不同教学班级的横向对比分析</span>
             </div>
           </div>
@@ -119,17 +220,21 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, markRaw } f
 import * as echarts from 'echarts'
 import { ArrowDown, Refresh, User, Trophy, DataLine, Histogram, CircleCheck, Warning, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { analyticsOverviewApi, classTrendApi, scoreDistributionApi, teacherExamsApi, wrongTopicsApi } from '../../api'
+import { analyticsOverviewApi, classTrendApi, scoreDistributionApi, studentScoresApi, teacherExamsApi, wrongTopicsApi } from '../../api'
+import { formatDateTime } from '../../utils/datetime'
 
 const selectedExamId = ref('')
 const examOptions = ref([])
 const topN = ref(10)
 const loading = ref(false)
+const scoreKeyword = ref('')
+const scoreStatusFilter = ref('ALL')
 
 const overview = ref({ totalStudents: 0, passCount: 0, passRate: 0, avgScore: 0, maxScore: null, minScore: null })
 const distData = ref([])
 const trendData = ref([])
 const wrongData = ref([])
+const studentScoreRows = ref([])
 
 const distRef = ref(null)
 const trendRef = ref(null)
@@ -149,8 +254,48 @@ const selectedExam = computed(() => examOptions.value.find(e => String(e.examId)
 
 const formatNum = (v) => v != null ? (Number.isInteger(v) ? v : v.toFixed(1)) : '0'
 
+const scoreStatusOptions = [
+  { label: '全部状态', value: 'ALL' },
+  { label: '未交卷', value: 'NOT_SUBMITTED' },
+  { label: '作答中', value: 'IN_PROGRESS' },
+  { label: '判分中', value: 'PROCESSING' },
+  { label: '待阅卷', value: 'SUBMITTED' },
+  { label: '已出分', value: 'GRADED' }
+]
+
+const scoreSummary = computed(() => {
+  const rows = studentScoreRows.value
+  return {
+    total: rows.length,
+    submitted: rows.filter(item => item.submitted).length,
+    graded: rows.filter(item => item.submissionStatus === 'GRADED').length,
+    notSubmitted: rows.filter(item => !item.submitted).length
+  }
+})
+
+const filteredScoreRows = computed(() => {
+  const keyword = scoreKeyword.value.trim().toLowerCase()
+  return studentScoreRows.value.filter((row) => {
+    const status = row.submissionStatus || 'NOT_SUBMITTED'
+    if (scoreStatusFilter.value !== 'ALL' && status !== scoreStatusFilter.value) {
+      return false
+    }
+    if (!keyword) {
+      return true
+    }
+    const text = [
+      row.studentName,
+      row.studentNo,
+      row.username,
+      ...(row.classNames || [])
+    ].filter(Boolean).join(' ').toLowerCase()
+    return text.includes(keyword)
+  })
+})
+
 const exportLabels = {
   csv: 'CSV 原始数据',
+  scores: '学生成绩列表',
   dist: '成绩分布报告',
   trend: '班级趋势报告',
   wrong: '错题统计报告'
@@ -205,9 +350,27 @@ const buildDistributionRows = () => [
 ]
 
 const buildTrendRows = () => [
-  ['班级均分趋势'],
+  ['班级均分对比'],
   ['班级ID', '班级名称', '平均分'],
   ...trendData.value.map(item => [item.classId ?? '', item.className ?? '', formatNum(item.avgScore)])
+]
+
+const buildStudentScoreRows = () => [
+  ['学生成绩列表'],
+  ['学生ID', '学号', '姓名', '账号', '班级', '提交状态', '客观分', '主观分', '总分', '结果', '提交时间'],
+  ...studentScoreRows.value.map(item => [
+    item.studentId ?? '',
+    item.studentNo ?? '',
+    item.studentName ?? '',
+    item.username ?? '',
+    formatClassNames(item.classNames),
+    submissionStatusText(item),
+    formatScore(item.objectiveScore),
+    formatScore(item.subjectiveScore),
+    formatScore(item.totalScore),
+    passText(item),
+    formatDateTime(item.submittedAt, '')
+  ])
 ]
 
 const buildWrongTopicRows = () => [
@@ -223,6 +386,7 @@ const buildWrongTopicRows = () => [
 ]
 
 const buildExportRows = (command) => {
+  if (command === 'scores') return buildStudentScoreRows()
   if (command === 'dist') return buildDistributionRows()
   if (command === 'trend') return buildTrendRows()
   if (command === 'wrong') return buildWrongTopicRows()
@@ -230,6 +394,8 @@ const buildExportRows = (command) => {
     ...buildExamInfoRows(),
     [],
     ...buildOverviewRows(),
+    [],
+    ...buildStudentScoreRows(),
     [],
     ...buildDistributionRows(),
     [],
@@ -250,6 +416,71 @@ const downloadCsv = (filename, rows) => {
   document.body.removeChild(link)
   URL.revokeObjectURL(url)
 }
+
+const formatScore = (score) => score == null ? '--' : score
+
+const formatClassNames = (classNames) => {
+  if (!Array.isArray(classNames) || !classNames.length) return '--'
+  return classNames.join(' / ')
+}
+
+const submissionStatusText = (row) => {
+  if (!row?.submissionId) return '未交卷'
+  if (row.submissionStatus === 'IN_PROGRESS') return '作答中'
+  if (row.submissionStatus === 'PROCESSING') return '判分中'
+  if (row.submissionStatus === 'SUBMITTED') return '待阅卷'
+  if (row.submissionStatus === 'GRADED') return '已出分'
+  return row.submissionStatus || '--'
+}
+
+const submissionStatusTagType = (row) => {
+  if (!row?.submissionId) return 'info'
+  if (row.submissionStatus === 'GRADED') return 'success'
+  if (row.submissionStatus === 'SUBMITTED') return 'warning'
+  if (row.submissionStatus === 'PROCESSING') return 'primary'
+  return 'info'
+}
+
+const passText = (row) => {
+  if (!row?.submitted) return '未交'
+  if (row.passFlag === true) return '通过'
+  if (row.passFlag === false) return '未过'
+  return '待定'
+}
+
+const passTagType = (row) => {
+  if (!row?.submitted || row.passFlag == null) return 'info'
+  return row.passFlag ? 'success' : 'danger'
+}
+
+const scorePercent = (score) => {
+  const value = Number(score)
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(100, value))
+}
+
+const scoreProgressColor = (row) => {
+  if (row.passFlag === true) return '#16a34a'
+  if (row.passFlag === false) return '#dc2626'
+  return '#64748b'
+}
+
+const scoreTextClass = (row) => ({
+  'is-pass': row.passFlag === true,
+  'is-fail': row.passFlag === false
+})
+
+const studentInitial = (row) => {
+  const text = row?.studentName || row?.username || '?'
+  return text.charAt(0).toUpperCase()
+}
+
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
 
 // 现代化的通用 ECharts 提示框配置
 const modernTooltip = {
@@ -302,7 +533,6 @@ const renderCharts = () => {
     xAxis: { 
       type: 'category', 
       data: trendData.value.map(d => d.className), 
-      boundaryGap: false,
       axisTick: { show: false },
       axisLine: { lineStyle: { color: '#e2e8f0' } },
       axisLabel: { color: '#64748b', margin: 12 }
@@ -315,19 +545,23 @@ const renderCharts = () => {
     },
     series: [{
       name: '平均分',
-      type: 'line',
+      type: 'bar',
       data: trendData.value.map(d => d.avgScore),
-      smooth: 0.4,
-      itemStyle: { color: '#8b5cf6', borderWidth: 2, borderColor: '#fff' },
-      areaStyle: {
+      itemStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: 'rgba(139, 92, 246, 0.3)' },
-          { offset: 1, color: 'rgba(139, 92, 246, 0.02)' }
-        ])
+          { offset: 0, color: '#22c55e' },
+          { offset: 1, color: '#0f766e' }
+        ]),
+        borderRadius: [6, 6, 0, 0]
       },
-      symbolSize: 10,
-      showSymbol: false,
-      lineStyle: { width: 3, shadowColor: 'rgba(139, 92, 246, 0.2)', shadowBlur: 10 }
+      barWidth: '34%',
+      label: {
+        show: true,
+        position: 'top',
+        formatter: '{c}',
+        color: '#0f766e',
+        fontWeight: 700
+      }
     }]
   })
 
@@ -340,15 +574,15 @@ const renderCharts = () => {
         const d = wrongData.value[p[0].dataIndex];
         return `
           <div style="max-width:320px; white-space:normal; line-height: 1.6;">
-            <div style="color:#64748b; font-size:12px; margin-bottom:8px;">题目 ID: ${d.questionId}</div>
-            <div style="font-weight:600; color:#1e293b; margin-bottom:12px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${d.questionContent}</div>
+            <div style="color:#64748b; font-size:12px; margin-bottom:8px;">题目 ID: ${escapeHtml(d.questionId)}</div>
+            <div style="font-weight:600; color:#1e293b; margin-bottom:12px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${escapeHtml(d.questionContent)}</div>
             <div style="display:flex; justify-content:space-between; border-top:1px solid #f1f5f9; padding-top:8px;">
               <span style="color:#64748b;">错题率</span>
-              <b style="color:#ef4444; font-size:16px;">${d.wrongRate}%</b>
+              <b style="color:#ef4444; font-size:16px;">${escapeHtml(d.wrongRate)}%</b>
             </div>
             <div style="display:flex; justify-content:space-between; margin-top:4px;">
               <span style="color:#64748b;">错误人次 / 总作答</span>
-              <span style="color:#334155; font-weight:500;">${d.wrongCount} / ${d.totalCount}</span>
+              <span style="color:#334155; font-weight:500;">${escapeHtml(d.wrongCount)} / ${escapeHtml(d.totalCount)}</span>
             </div>
           </div>
         `
@@ -400,17 +634,23 @@ const loadAll = async () => {
   loading.value = true
   try {
     const id = selectedExamId.value
-    const [ov, dist, tr, wr] = await Promise.all([
+    const [ov, dist, tr, wr, scores] = await Promise.all([
       analyticsOverviewApi(id),
       scoreDistributionApi(id),
       classTrendApi(id),
-      wrongTopicsApi(id, topN.value)
+      wrongTopicsApi(id, topN.value),
+      studentScoresApi(id)
     ])
+    if (String(id) !== String(selectedExamId.value)) return
     overview.value = ov || { totalStudents: 0, passCount: 0, passRate: 0, avgScore: 0, maxScore: null, minScore: null }
     distData.value = dist || []
     trendData.value = tr || []
     wrongData.value = wr || []
-    nextTick(renderCharts)
+    studentScoreRows.value = scores || []
+    nextTick(() => {
+      renderCharts()
+      resizeCharts()
+    })
   } catch (e) {
     ElMessage.error('加载分析数据失败')
   } finally {
@@ -447,20 +687,31 @@ const resizeCharts = () => {
   wrongChart?.resize()
 }
 
+const initCharts = () => {
+  if (!distRef.value || !trendRef.value || !wrongRef.value) return
+  distChart = distChart || echarts.init(distRef.value)
+  trendChart = trendChart || echarts.init(trendRef.value)
+  wrongChart = wrongChart || echarts.init(wrongRef.value)
+}
+
 watch(selectedExamId, loadAll)
 watch(topN, loadAll)
 
 onMounted(async () => {
-  examOptions.value = await teacherExamsApi()
-  if (examOptions.value.length) {
-    if (!selectedExamId.value) {
-      selectedExamId.value = String(examOptions.value[0].examId)
+  try {
+    examOptions.value = await teacherExamsApi()
+    if (examOptions.value.length) {
+      await nextTick()
+      initCharts()
+      window.addEventListener('resize', resizeCharts)
+      if (!selectedExamId.value) {
+        selectedExamId.value = String(examOptions.value[0].examId)
+      } else {
+        await loadAll()
+      }
     }
-    distChart = echarts.init(distRef.value)
-    trendChart = echarts.init(trendRef.value)
-    wrongChart = echarts.init(wrongRef.value)
-    window.addEventListener('resize', resizeCharts)
-    await loadAll()
+  } catch (e) {
+    ElMessage.error('加载考试列表失败')
   }
 })
 
@@ -474,23 +725,22 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .analytics-dashboard {
-  padding: 32px;
-  background-color: #f1f5f9;
+  padding: 24px;
+  background-color: #eef2f6;
   min-height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: "Microsoft YaHei", "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-/* Header Styles */
 .dashboard-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 32px;
-  padding: 28px 32px;
+  margin-bottom: 20px;
+  padding: 20px 24px;
   background: #ffffff;
-  border-radius: 20px;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+  border: 1px solid #dbe3ec;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
 }
 
 .title-wrapper {
@@ -500,11 +750,11 @@ onBeforeUnmount(() => {
 }
 
 .title-icon {
-  width: 54px;
-  height: 54px;
-  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-  color: #2563eb;
-  border-radius: 16px;
+  width: 48px;
+  height: 48px;
+  background: #e8f1ff;
+  color: #1d4ed8;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -514,10 +764,10 @@ onBeforeUnmount(() => {
 
 .dashboard-title {
   margin: 0 0 6px;
-  font-size: 24px;
+  font-size: 22px;
   color: #0f172a;
-  font-weight: 800;
-  letter-spacing: -0.01em;
+  font-weight: 750;
+  letter-spacing: 0;
 }
 
 .dashboard-subtitle {
@@ -549,11 +799,11 @@ onBeforeUnmount(() => {
 }
 
 .exam-selector {
-  width: 340px;
+  width: 360px;
 }
 
 :deep(.exam-selector .el-input__wrapper) {
-  border-radius: 12px;
+  border-radius: 8px;
   box-shadow: 0 0 0 1px #e2e8f0 inset;
   background-color: #f8fafc;
 }
@@ -564,7 +814,7 @@ onBeforeUnmount(() => {
 }
 
 .refresh-btn, .export-btn {
-  border-radius: 10px;
+  border-radius: 8px;
   font-weight: 500;
 }
 
@@ -572,38 +822,40 @@ onBeforeUnmount(() => {
   height: 40px;
 }
 
-/* Empty State */
 .empty-state {
   background: #ffffff;
-  border-radius: 20px;
+  border-radius: 8px;
   padding: 80px 0;
   border: 1px dashed #e2e8f0;
 }
 
-/* Metric Cards */
+.dashboard-content {
+  display: grid;
+  gap: 20px;
+}
+
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 24px;
-  margin-bottom: 32px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .metric-card {
-  padding: 24px;
+  padding: 16px;
   background: #ffffff;
-  border-radius: 20px;
-  border: 1px solid rgba(226, 232, 240, 0.6);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 8px;
+  border: 1px solid #dbe3ec;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .metric-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
-  border-color: rgba(226, 232, 240, 1);
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.07);
+  border-color: #b8c6d8;
 }
 
 .metric-header {
@@ -613,9 +865,9 @@ onBeforeUnmount(() => {
 }
 
 .metric-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -629,8 +881,8 @@ onBeforeUnmount(() => {
 }
 
 .metric-value {
-  font-size: 32px;
-  font-weight: 800;
+  font-size: 28px;
+  font-weight: 760;
   color: #0f172a;
   line-height: 1;
   font-feature-settings: "tnum";
@@ -644,19 +896,174 @@ onBeforeUnmount(() => {
   font-weight: 500;
 }
 
-/* Charts Area */
+.score-list-panel,
+.chart-container {
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid #dbe3ec;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
+}
+
+.score-list-panel {
+  padding: 20px;
+}
+
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.section-heading h2 {
+  margin: 0 0 4px;
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 750;
+}
+
+.section-heading p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.score-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.score-search {
+  width: 260px;
+}
+
+.score-status-filter {
+  width: 136px;
+}
+
+:deep(.score-search .el-input__wrapper),
+:deep(.score-status-filter .el-input__wrapper) {
+  border-radius: 8px;
+}
+
+.score-summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.score-summary-item {
+  min-height: 64px;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.score-summary-item span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.score-summary-item strong {
+  color: #0f172a;
+  font-size: 24px;
+  font-weight: 760;
+}
+
+.score-summary-item.is-muted strong {
+  color: #64748b;
+}
+
+.score-table {
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+:deep(.score-table .el-table__header th) {
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 700;
+}
+
+.student-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.student-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #0f172a;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  flex: 0 0 34px;
+}
+
+.student-cell strong,
+.student-cell span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.student-cell strong {
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.student-cell span {
+  color: #64748b;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.score-pair {
+  color: #334155;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-meter {
+  display: grid;
+  gap: 6px;
+}
+
+.score-meter strong {
+  color: #334155;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-meter strong.is-pass {
+  color: #15803d;
+}
+
+.score-meter strong.is-fail {
+  color: #b91c1c;
+}
+
 .charts-layout {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 24px;
+  gap: 20px;
 }
 
 .chart-container {
-  background: #ffffff;
-  padding: 28px 32px;
-  border-radius: 24px;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.03);
+  padding: 22px 24px;
 }
 
 .full-width {
@@ -672,7 +1079,7 @@ onBeforeUnmount(() => {
 
 .chart-title-group h3 {
   margin: 0 0 4px;
-  font-size: 18px;
+  font-size: 17px;
   color: #1e293b;
   font-weight: 700;
 }
@@ -695,7 +1102,7 @@ onBeforeUnmount(() => {
 }
 
 .echart-view {
-  height: 380px;
+  height: 340px;
   width: 100%;
 }
 
@@ -707,6 +1114,9 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1280px) {
+  .metrics-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
   .charts-layout {
     grid-template-columns: 1fr;
   }
@@ -729,7 +1139,23 @@ onBeforeUnmount(() => {
     width: 100%;
     flex-wrap: wrap;
   }
+  .action-group {
+    width: 100%;
+  }
   .exam-selector {
+    width: 100%;
+  }
+  .metrics-grid,
+  .score-summary-row {
+    grid-template-columns: 1fr;
+  }
+  .section-heading,
+  .score-tools {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .score-search,
+  .score-status-filter {
     width: 100%;
   }
   .chart-container {
