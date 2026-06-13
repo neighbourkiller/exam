@@ -1,0 +1,60 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: exam-mysql
+    restart: always
+    ports:
+      - "13306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: exam_mvp
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: exam-rabbitmq
+    restart: always
+    ports:
+      - "15673:5672"
+      - "15674:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  redis:
+    image: redis/redis-stack:latest
+    container_name: exam-redis-stack
+    restart: always
+    ports:
+      - "16379:6379"
+      - "18001:8001"
+    volumes:
+      - redis_data:/data
+
+  minio:
+    image: minio/minio
+    container_name: exam-minio
+    restart: always
+    command: server /data --address :9000 --console-address :9001
+    ports:
+      - "19000:9000"
+      - "19001:9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password123
+    volumes:
+      - minio_data:/data
+
+volumes:
+  rabbitmq_data:
+    name: rabbitmq-data
+  redis_data:
+    name: redis-data
+  minio_data:
+    name: minio_exam_data
+  mysql_data:
+    name: mysql-exam-data
